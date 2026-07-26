@@ -68,6 +68,39 @@ en alternatieve routes zijn alle drie gemeten en leverden niets op — zie
 [BEVINDINGEN.md](spike/BEVINDINGEN.md), meting 5. Wat het getal wél doet: je ziet
 vóór vertrek wat je krijgt.
 
+### Is het wel een rondje?
+
+Ook gemeten, en ook getoond. De app rekent uit welk deel van de route je twéé
+keer loopt — voor elk punt kijken of er een ander punt is dat ver weg ligt lángs
+de route maar dichtbij in de ruimte. Nul is een echt rondje, richting 1 is een
+heen-en-terug.
+
+Dat weegt zwaarder dan het pad-aandeel: een route waarvan je een derde dubbel
+loopt is geen rondje, hoe mooi het pad ook is. Het staat als tag op het kaartje:
+*echt rondje*, *rondje met een stukje terug*, of *deels heen en terug*.
+
+De oorzaak van kromme lussen zat in de selectie: was er van een aangevinkte soort
+alleen aan één kant iets te vinden, dan kwamen twee punten naast elkaar te liggen
+— gemeten peilingen 169°, 16° en 355°, dus twee punten 21° van elkaar. Nu krijgt
+een punt dat te dicht bij een al gekozen punt ligt een strafscore.
+
+**Let op de afweging.** In een gebied waar het padennetwerk niet aan elkaar hangt
+sluiten "echt rondje" en "veel paadjes" elkaar uit: gemeten kwam er een route uit
+van 76% paadjes waarvan je 62% dubbel liep, naast een van 41% paadjes die een net
+rondje was. Daarom laat de app niet drie bijna gelijke rondjes zien maar spreidt
+hij de keuze: de beste, de meest paadjesrijke, en het rondste. Die afweging is aan
+jou.
+
+### Wat je op de kaart ziet
+
+Straatnamen vanaf z14, langs de lijn geplaatst. Punten onderweg vanaf z14 als
+mint stip, met hun naam vanaf z15 — voor zover OSM er een heeft, en dat is bij
+ongeveer een kwart het geval.
+
+De `poi`-laag is streng gefilterd. Ongefilterd bestaat hij vooral uit ruis: in een
+schijf van 3 km stonden er 174 parkeerplaatsen, 167 hekken, 146 bollards en 101
+afvalbakken in. Er is dus een witte lijst van wat je onderweg wíl zien.
+
 ### Startpunt
 
 Standaard je GPS-positie, maar via *Startpunt* op het instelscherm kun je een plek

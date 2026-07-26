@@ -11,7 +11,7 @@
    een lus van 9,4 km, dus lus ≈ 5,9 × ringradius. Vandaar r0 = doel / 6.
    ============================================================================ */
 
-import { bearing, bearingDelta, distM, orderTour } from './geo.js';
+import { bearing, bearingDelta, distM, orderTour, overlapFraction } from './geo.js';
 import { routeLoop, routeOutAndBack, RouteError } from './router.js';
 import { categoryByKey } from './pois.js';
 
@@ -95,6 +95,7 @@ export async function generateRoutes({
         i, subset: subset.join('+'), stops: cand.pois.length, ringM: Math.round(cand.ringM),
         km: +(cand.distanceM / 1000).toFixed(2), error: +cand.error.toFixed(3),
         pad: cand.pathShare == null ? null : Math.round(cand.pathShare * 100),
+        dubbel: Math.round((cand.overlap ?? 0) * 100),
         cats: cand.pois.map((p) => p.category).join('+'),
       };
       if (seen.has(fingerprint)) { attempts.push({ ...info, reason: 'zelfde punten' }); continue; }
@@ -141,7 +142,11 @@ export async function generateRoutes({
   const byError = (a, b) => {
     const aOk = a.error <= TOLERANCE, bOk = b.error <= TOLERANCE;
     if (aOk !== bOk) return aOk ? -1 : 1;
-    if (aOk && bOk) return (b.pathShare ?? 0) - (a.pathShare ?? 0);
+    if (aOk && bOk) {
+      const rondje = (a.overlap ?? 0) - (b.overlap ?? 0);
+      if (Math.abs(rondje) > 0.10) return rondje;
+      return (b.pathShare ?? 0) - (a.pathShare ?? 0);
+    }
     return a.error - b.error;
   };
   const fits = (c) => c.error <= MAX_ERROR;
@@ -150,7 +155,7 @@ export async function generateRoutes({
 
   let kept;
   if (full.some(fits)) {
-    kept = full.filter(fits).slice(0, count);
+    kept = spreidKeuze(full.filter(fits), count);
     if (kept.length < count) kept.push(...relaxed.filter(fits).slice(0, count - kept.length));
   } else {
     // Niets haalt de marge met álle eisen erin. Bied de kortere alternatieven
@@ -224,6 +229,8 @@ async function buildCandidate({
       distanceM: leg.distanceM, timeS: leg.timeS, ascendM: leg.ascendM,
       coords: leg.coords, pois: tour, error, ringM: r, stops: tour.length,
       pathShare: leg.pathShare, byKind: leg.byKind,
+      // Bij heen-en-terug ís dubbel lopen de bedoeling; daar niet op afrekenen.
+      overlap: outback ? 0 : overlapFraction(leg.coords),
     };
     // Zit de afstand goed, dan is het pad-aandeel de tiebreak: het is een
     // wandelapp, dus tussen twee rondjes van de juiste lengte wint het rondje
@@ -281,8 +288,13 @@ function beter(a, b) {
   const aOk = a.error <= TOLERANCE, bOk = b.error <= TOLERANCE;
   if (aOk !== bOk) return aOk;
   if (aOk && bOk) {
-    const verschil = (a.pathShare ?? 0) - (b.pathShare ?? 0);
-    if (Math.abs(verschil) > 0.04) return verschil > 0;
+    // Eerst rondje-zijn: een route waarvan je een derde twee keer loopt is geen
+    // rondje, en dat weegt zwaarder dan een paar procent meer pad.
+    const rondje = (b.overlap ?? 0) - (a.overlap ?? 0);
+    if (Math.abs(rondje) > 0.10) return rondje > 0;
+
+    const pad = (a.pathShare ?? 0) - (b.pathShare ?? 0);
+    if (Math.abs(pad) > 0.04) return pad > 0;
   }
   return a.error < b.error;
 }
@@ -301,11 +313,26 @@ function pickCovering({ start, pois, r, wanted, extraStops = 0, offsetFraction =
   const picked = [];
   const used = new Set();
 
+  /* Minimale hoek tussen punten om nog een rondje te krijgen. Bij drie stops
+   * hoort dat 120° te zijn; we eisen tweederde daarvan, want anders vind je in
+   * een gebied met een gat aan één kant helemaal niets. */
+  const minGap = (360 / stops) * 0.66;
+
   const score = (p, centreBearing) => {
+    const b = bearing(start, p.coord);
     const radial = Math.abs(p.distFromStart - r) / r;          // hoe dicht bij de ring
-    const off = bearingDelta(bearing(start, p.coord), centreBearing) / 180;
+    const off = bearingDelta(b, centreBearing) / 180;
     const reused = usedByOthers?.has(p) ? 0.35 : 0;            // liever een ánder rondje
-    return radial + off * 0.9 + reused;
+
+    // Straf voor te dicht bij een al gekozen punt. Zonder dit lag de hele lus aan
+    // één kant zodra een sector leeg was: gemeten peilingen 169°, 16° en 355° —
+    // twee punten 21° van elkaar, dus een heen-en-terug in plaats van een rondje.
+    let cluster = 0;
+    for (const q of picked) {
+      const gap = bearingDelta(b, bearing(start, q.coord));
+      if (gap < minGap) cluster += (minGap - gap) / minGap * 2.5;
+    }
+    return radial + off * 0.9 + reused + cluster;
   };
 
   for (let s = 0; s < stops; s++) {
@@ -319,7 +346,8 @@ function pickCovering({ start, pois, r, wanted, extraStops = 0, offsetFraction =
 
     // Eerst binnen de sector zoeken. Is die leeg — de punten liggen vaak aan
     // één kant, in Twickel zit een gat in het zuidwesten — dan nemen we het
-    // punt van die soort dat het best bij de ring past, waar het ook ligt.
+    // punt van die soort dat het best scoort, waar het ook ligt. De clusterstraf
+    // in score() zorgt dat het dan alsnog zo ver mogelijk van de rest ligt.
     const inSector = ofKind.filter(
       (p) => bearingDelta(bearing(start, p.coord), centreBearing) <= sectorSize / 2);
     const pool = inSector.length ? inSector : ofKind;
@@ -369,6 +397,35 @@ function fillUp(picked, used, pois, r) {
   return picked;
 }
 
+/**
+ * Kies wélke kandidaten je laat zien.
+ *
+ * Drie bijna gelijke rondjes tonen is zonde van de ruimte. Erger: in dit
+ * landschap sluiten "echt rondje" en "veel paadjes" elkaar uit — gemeten kwam er
+ * een route uit van 76% paadjes waarvan je 62% dubbel liep, en een van 41%
+ * paadjes die een net rondje was. Dat is een afweging die de gebruiker moet
+ * maken, niet ik. Dus: de beste op de rangschikking, plus de meest paadjesrijke,
+ * plus het rondste rondje.
+ */
+function spreidKeuze(lijst, count) {
+  if (lijst.length <= count) return lijst.slice();
+
+  const gekozen = [lijst[0]];
+  const rest = () => lijst.filter((c) => !gekozen.includes(c));
+
+  const meestPad = rest().reduce((a, b) => ((b.pathShare ?? 0) > (a.pathShare ?? 0) ? b : a), rest()[0]);
+  if (meestPad && gekozen.length < count) gekozen.push(meestPad);
+
+  const rondst = rest().reduce((a, b) => ((b.overlap ?? 1) < (a.overlap ?? 1) ? b : a), rest()[0]);
+  if (rondst && gekozen.length < count) gekozen.push(rondst);
+
+  for (const c of rest()) {
+    if (gekozen.length >= count) break;
+    gekozen.push(c);
+  }
+  return gekozen;
+}
+
 /* ── Presentatie ──────────────────────────────────────────────────────────── */
 
 function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
@@ -402,6 +459,12 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
       pathShare: c.pathShare,
       padLabel: c.pathShare == null ? null : `${Math.round(c.pathShare * 100)}% paadjes`,
       byKind: c.byKind,
+      overlap: c.overlap ?? 0,
+      // Eerlijk benoemen wat het is. Boven een derde dubbel gelopen mag je het
+      // geen rondje meer noemen.
+      vormLabel: (c.overlap ?? 0) > 0.33 ? 'deels heen en terug'
+               : (c.overlap ?? 0) > 0.15 ? 'rondje met een stukje terug'
+               : 'echt rondje',
       omschrijving: describe(c),
       pois: c.pois.map((p, n) => ({
         naam: p.label, icon: p.icon, category: p.category, coord: p.coord,

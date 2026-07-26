@@ -474,6 +474,7 @@ views.resultaten = () => {
                   <span class="tag">${esc(r.tijd)}</span>
                   <span class="tag tag--lime">${esc(r.punten)}</span>
                   ${r.padLabel ? `<span class="tag ${padKlasse(r.pathShare)}">${esc(r.padLabel)}</span>` : ''}
+                  <span class="tag ${vormKlasse(r.overlap)}">${esc(r.vormLabel)}</span>
                 </span>
               </span>
             </button>`).join('')}
@@ -507,6 +508,10 @@ function wegVerdeling(r) {
 const padKlasse = (share) =>
   share == null ? '' : share >= 0.65 ? 'tag--lime' : share >= 0.4 ? 'tag--mint' : 'tag--warn';
 
+/* Hoe rond het rondje is. Boven een derde dubbel gelopen is het er geen. */
+const vormKlasse = (overlap) =>
+  (overlap ?? 0) > 0.33 ? 'tag--warn' : (overlap ?? 0) > 0.15 ? 'tag--mint' : 'tag--lime';
+
 const missingLabel = () => state.missing
   .map((k) => (CATEGORIES.find((c) => c.key === k) || {}).label || k)
   .join(' en ');
@@ -531,6 +536,7 @@ views.detail = () => {
             <span class="tag tag--lg">± ${esc(r.tijd)}</span>
             <span class="tag tag--lg ${r.dropped.length ? 'tag--warn' : 'tag--mint'}">${esc(r.badge)}</span>
             ${r.padLabel ? `<span class="tag tag--lg ${padKlasse(r.pathShare)}">${esc(r.padLabel)}</span>` : ''}
+            <span class="tag tag--lg ${vormKlasse(r.overlap)}">${esc(r.vormLabel)}</span>
           </div>
           ${r.byKind ? `<p class="hint-line">${esc(wegVerdeling(r))}</p>` : ''}
 
