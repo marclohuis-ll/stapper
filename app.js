@@ -17,7 +17,9 @@ import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
 import { bearing } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
+import { searchCaches } from './src/okapi.js';
 import * as store from './src/store.js';
+import * as offline from './src/offline.js';
 import * as mapview from './src/mapview.js';
 
 /* ── Feature flags ───────────────────────────────────────────────────────── */
@@ -36,11 +38,26 @@ const WELKOM_PUNTEN = [
   { icon: 'child_care',     label: 'Kindmodus: je kind wijst de weg' },
 ];
 
+/* De drie tegels in de kindmodus. In het ontwerp waren ze decoratief; nu doet
+ * elk iets. "zoek" is bewust geen vaste tekst maar volgt het volgende punt. */
 const KID_HINTS = [
-  { icon: 'water',        label: 'zoek water' },
-  { icon: 'photo_camera', label: 'maak foto' },
-  { icon: 'volume_up',    label: 'voorlezen' },
+  { key: 'zoek',  icon: 'search',       label: 'wat zoeken we?' },
+  { key: 'foto',  icon: 'photo_camera', label: 'maak foto' },
+  { key: 'lees',  icon: 'volume_up',    label: 'voorlezen' },
 ];
+
+/* Waar je naar moet uitkijken, per soort punt. Dit is wat een kind kan zien —
+ * "leisure=playground" zegt hem niets. */
+const ZOEK_HINT = {
+  speeltuin: 'zoek een glijbaan of een schommel',
+  brug: 'zoek een brug over het water',
+  pauze: 'zoek een terras of een deur waar je naar binnen kan',
+  sportveld: 'zoek een veld met doelen',
+  knooppunt: 'zoek een bordje met pijlen en nummers',
+  schuilhut: 'zoek een hutje waar je kunt schuilen',
+  picknick: 'zoek een tafel van hout',
+  uitkijk: 'zoek een plek waar je heel ver kunt kijken',
+};
 
 /* Stickers zijn per soort punt; die van het gevonden punt wordt uitgereikt. */
 const STICKER_FOR = {
@@ -79,6 +96,16 @@ const state = {
   stickers: [],
   saved: [],
   walks: [],
+  photos: [],
+
+  /* Offline meenemen van de kaart voor de geopende route. */
+  offline: { fraction: 0, busy: false, done: 0, total: 0 },
+
+  /* Instellingen achter het stickerboek. */
+  editProfile: false,
+  editSetting: null,          // 'code' | 'okapi' | null
+  parentCode: null,
+  okapiKey: null,
 };
 
 /* ── De wandeling ────────────────────────────────────────────────────────
@@ -276,11 +303,11 @@ views.instellen = () => {
 
           <div class="section-head">Onderweg moet er zijn</div>
           <div class="chips" role="group" aria-label="Onderweg moet er zijn">
-            ${CATEGORIES.map((c) => `
-              <button class="chip ${c.from === 'overpass' ? 'chip--net' : ''}"
+            ${CATEGORIES.filter((c) => c.from !== 'okapi' || state.okapiKey).map((c) => `
+              <button class="chip ${c.from !== 'tiles' ? 'chip--net' : ''}"
                       data-act="chip" data-chip="${c.key}"
                       aria-pressed="${!!state.picked[c.key]}"
-                      ${c.from === 'overpass' ? 'title="Heeft netwerk nodig — komt niet uit de kaarttegels"' : ''}>
+                      ${c.from !== 'tiles' ? 'title="Heeft netwerk nodig — komt niet uit de kaarttegels"' : ''}>
                 ${ico(c.icon)}<span>${esc(c.label)}</span>
               </button>`).join('')}
           </div>
@@ -424,6 +451,8 @@ views.detail = () => {
             <span class="tag tag--lg ${r.dropped.length ? 'tag--warn' : 'tag--mint'}">${esc(r.badge)}</span>
           </div>
 
+          ${offlineCard()}
+
           <div class="section-head section-head--tight">Onderweg kom je langs</div>
           <div class="poi-list">
             ${r.pois.map((p) => `
@@ -450,6 +479,44 @@ views.detail = () => {
     </div>
   </div>`;
 };
+
+/** In het bos is geen bereik. De kaart moet dus vóór vertrek mee, op de wifi. */
+function offlineCard() {
+  const o = state.offline;
+
+  if (o.busy) {
+    const pct = o.total ? Math.round(o.done / o.total * 100) : 0;
+    return `<div class="offline offline--busy">
+      <span class="offline__ico">${ico('cloud_download')}</span>
+      <span class="offline__text">
+        <span class="offline__title">Kaart wordt opgehaald…</span>
+        <span class="offline__sub">${o.done} van ${o.total} tegels</span>
+      </span>
+      <span class="offline__bar"><span class="offline__fill" style="width:${pct}%"></span></span>
+    </div>`;
+  }
+
+  if (o.fraction > 0.9) {
+    return `<div class="offline offline--done">
+      <span class="offline__ico">${ico('offline_pin')}</span>
+      <span class="offline__text">
+        <span class="offline__title">Kaart staat offline klaar</span>
+        <span class="offline__sub">werkt zonder bereik</span>
+      </span>
+    </div>`;
+  }
+
+  return `<button class="offline" data-act="download-offline">
+    <span class="offline__ico">${ico('cloud_download')}</span>
+    <span class="offline__text">
+      <span class="offline__title">Kaart offline meenemen</span>
+      <span class="offline__sub">${o.fraction > 0
+        ? `${Math.round(o.fraction * 100)}% staat er al — doe dit op de wifi`
+        : 'doe dit op de wifi, in het bos is geen bereik'}</span>
+    </span>
+    ${ico('chevron_right', 'offline__chev')}
+  </button>`;
+}
 
 views.onderweg = () => {
   const r = currentRoute();
@@ -555,8 +622,12 @@ views.kind = () => {
 
         <div class="kind__hints">
           ${KID_HINTS.map((k) => `
-            <div class="hint">${ico(k.icon)}<span class="hint__label">${esc(k.label)}</span></div>`).join('')}
+            <button class="hint" data-act="hint" data-hint="${k.key}">
+              ${ico(k.icon)}<span class="hint__label">${esc(k.label)}</span>
+            </button>`).join('')}
         </div>
+        <input type="file" accept="image/*" capture="environment" class="verborgen-input"
+               data-act="foto-file" aria-hidden="true" tabindex="-1">
 
         <button class="kind__cta" data-act="open-sticker">${ico('visibility')}ik zie het!</button>
         ${walk.override ? `
@@ -643,13 +714,16 @@ views.profiel = () => {
             <button class="btn-icon btn-icon--flat" data-go="home" aria-label="Terug">${ico('arrow_back')}</button>
             <div class="profiel__kicker">Stickerboek van</div>
           </div>
+          ${state.editProfile ? profielForm() : `
           <div class="profiel__id">
-            <div class="avatar">${esc(state.profile.naam[0])}</div>
-            <div>
+            <div class="avatar">${esc(state.profile.naam[0] || '?')}</div>
+            <div style="flex:1;min-width:0">
               <h1 class="profiel__name">${esc(state.profile.naam)}, ${state.profile.leeftijd} jaar</h1>
               <div class="profiel__stats">${esc(statsLine(km))}</div>
             </div>
-          </div>
+            <button class="btn-icon btn-icon--flat" data-act="edit-profiel"
+                    aria-label="Naam en leeftijd wijzigen">${ico('edit')}</button>
+          </div>`}
         </div>
 
         <div class="profiel__body">
@@ -665,15 +739,64 @@ views.profiel = () => {
             }).join('')}
           </div>
 
+          ${state.photos.length ? `
+            <div class="section-head section-head--tight" style="margin-top:28px">Foto's onderweg</div>
+            <div class="fotos">
+              ${state.photos.slice().reverse().map((p) => `
+                <figure class="foto">
+                  <img src="${fotoUrl(p)}" alt="${esc(p.naam || 'foto onderweg')}" loading="lazy">
+                  ${p.naam ? `<figcaption>${esc(p.naam)}</figcaption>` : ''}
+                </figure>`).join('')}
+            </div>` : ''}
+
           ${state.saved.length ? `
             <div class="section-head section-head--tight" style="margin-top:28px">Bewaarde rondjes</div>
             ${state.saved.map(savedRouteRow).join('')}` : `
             <p class="hint-line" style="margin-top:24px">Nog geen rondjes bewaard.
               Tik op de bladwijzer bij een route om hem hier te zetten.</p>`}
 
-          <button class="btn-export" data-act="export">
-            ${ico('download')}Alles opslaan als bestand
-          </button>
+          <div class="section-head" style="margin-top:30px">Voor de grote mensen</div>
+
+          ${state.editSetting === 'code' ? settingForm({
+            key: 'code', label: 'Oudercode (vier cijfers)', value: state.parentCode || '',
+            type: 'number', hint: 'Leeg laten betekent: elke vier cijfers werkt.',
+          }) : `
+          <button class="setting" data-act="set-code">
+            ${ico(state.parentCode ? 'lock' : 'lock_open')}
+            <span class="setting__text">
+              <span class="setting__title">Oudercode</span>
+              <span class="setting__sub">${state.parentCode
+                ? 'ingesteld — nodig om de kindmodus te verlaten'
+                : 'niet ingesteld — elke vier cijfers werkt nu'}</span>
+            </span>
+            ${ico('chevron_right', 'setting__chev')}
+          </button>`}
+
+          ${state.editSetting === 'okapi' ? settingForm({
+            key: 'okapi', label: 'opencaching.nl consumer key', value: state.okapiKey || '',
+            type: 'text', hint: 'Aan te vragen bij opencaching.nl. Blijft op dit toestel; hij komt niet in de repo.',
+          }) : `
+          <button class="setting" data-act="set-okapi">
+            ${ico('travel_explore')}
+            <span class="setting__text">
+              <span class="setting__title">Geocaches (opencaching.nl)</span>
+              <span class="setting__sub">${state.okapiKey
+                ? 'sleutel ingevuld — speurtocht staat aan'
+                : 'geen sleutel — speurtocht staat uit'}</span>
+            </span>
+            ${ico('chevron_right', 'setting__chev')}
+          </button>`}
+
+          <div class="dubbel">
+            <button class="btn-export" data-act="export">
+              ${ico('download')}Opslaan
+            </button>
+            <button class="btn-export" data-act="import">
+              ${ico('upload')}Terugzetten
+            </button>
+          </div>
+          <input type="file" accept="application/json,.json" class="verborgen-input"
+                 data-act="import-file" aria-hidden="true" tabindex="-1">
           <p class="hint-line">Alles staat alleen op dit toestel. Eén gewiste telefoon
             en het boek is weg, dus bewaar af en toe een kopie.</p>
         </div>
@@ -681,6 +804,41 @@ views.profiel = () => {
     </div>
   </div>`;
 };
+
+/* Het profiel was hardcoded op de naam uit het designdocument. Dat staat in het
+ * stickerboek én in de kindmodus, dus het moet te wijzigen zijn. */
+const profielForm = () => `
+  <form class="profiel__form" data-act="save-profiel">
+    <label class="veld">
+      <span class="veld__label">Naam</span>
+      <input class="veld__input" name="naam" maxlength="24" required
+             value="${esc(state.profile.naam)}" autocomplete="off">
+    </label>
+    <label class="veld veld--kort">
+      <span class="veld__label">Leeftijd</span>
+      <input class="veld__input" name="leeftijd" type="number" min="1" max="17" required
+             value="${state.profile.leeftijd}">
+    </label>
+    <div class="profiel__form-acties">
+      <button type="button" class="btn-ghost btn-ghost--sm" data-act="cancel-profiel">Laat maar</button>
+      <button type="submit" class="btn-cta btn-cta--sm">Opslaan</button>
+    </div>
+  </form>`;
+
+/** Eén inline formulier voor de losse instellingen; leeg opslaan wist ze. */
+const settingForm = ({ key, label, value, type, hint }) => `
+  <form class="setting setting--form" data-act="save-setting" data-key="${key}">
+    <label class="veld">
+      <span class="veld__label">${esc(label)}</span>
+      <input class="veld__input" name="waarde" type="${type}" value="${esc(value)}"
+             autocomplete="off" ${key === 'code' ? 'inputmode="numeric" maxlength="4"' : ''}>
+      <span class="veld__hint">${esc(hint)}</span>
+    </label>
+    <div class="profiel__form-acties">
+      <button type="button" class="btn-ghost btn-ghost--sm" data-act="cancel-setting">Laat maar</button>
+      <button type="submit" class="btn-cta btn-cta--sm">Opslaan</button>
+    </div>
+  </form>`;
 
 function statsLine(km) {
   const w = state.walks.length, s = state.stickers.length;
@@ -711,9 +869,21 @@ let harvester = null;
 // de template-string erbij kan zonder de views tot modules te maken.
 window.__routeSvg = (r) => mapview.routeMiniSvg(r);
 
+/* Blob-URL's voor de foto's. Ze worden bij elke hertekening opnieuw gemaakt, dus
+ * de oude moeten vrijgegeven worden — anders lekt elke render geheugen. */
+let photoUrls = [];
+const fotoUrl = (p) => {
+  const url = URL.createObjectURL(p.blob);
+  photoUrls.push(url);
+  return url;
+};
+
 function render() {
   const body = app.querySelector('.screen__body');
   const keepScroll = lastScreen === state.screen && body ? body.scrollTop : 0;
+
+  photoUrls.forEach(URL.revokeObjectURL);
+  photoUrls = [];
 
   if (lastScreen === 'detail' && state.screen !== 'detail') mapview.detach();
 
@@ -736,7 +906,12 @@ async function mountMap() {
   const route = currentRoute();
   if (!host || !route) return;
   await mapview.attach(window.maplibregl, host);
-  mapview.render({ route, position: state.position, padding: 46 });
+  const pr = walk.progress;
+  mapview.render({
+    route, position: state.position, padding: 46,
+    progress: state.screen === 'onderweg' && pr && route.distanceM
+      ? pr.walkedM / route.distanceM : null,
+  });
   if (state.screen === 'onderweg' && state.position) mapview.centreOn(state.position, 16);
 }
 
@@ -752,6 +927,15 @@ function startWalk() {
   walk.progress = null;
   walk.override = false;
   walk.follow = true;
+  state.pauze = false;
+  hervatVolgen();
+}
+
+/** Positie en kompas (opnieuw) laten lopen. Apart, zodat pauze ze kan stoppen
+ *  en weer starten zonder de voortgang kwijt te raken. */
+function hervatVolgen() {
+  const route = currentRoute();
+  if (!route) return;
 
   const onMove = (p) => {
     state.position = p;
@@ -761,7 +945,11 @@ function startWalk() {
 
   const sim = simulationSetting();
   walk.stopWatch = sim
-    ? simulateWalk(route, onMove, sim)
+    ? simulateWalk(route, onMove, {
+        ...sim,
+        startFraction: walk.progress && route.distanceM
+          ? walk.progress.walkedM / route.distanceM : 0,
+      })
     : watchPosition(onMove, (e) => showNudge(e.message));
 
   walk.stopCompass = startCompass((h) => { walk.heading = h; paintNeedle(); });
@@ -803,7 +991,10 @@ function paintWalk() {
     const icon = app.querySelector('[data-next-ico] .ms');
     if (icon && pr.next) icon.textContent = pr.next.icon;
 
-    mapview.render({ route: r, position: state.position, fit: false });
+    mapview.render({
+      route: r, position: state.position, fit: false,
+      progress: r.distanceM ? pr.walkedM / r.distanceM : 0,
+    });
     if (walk.follow) mapview.centreOn(state.position, 16);
   }
 
@@ -873,15 +1064,19 @@ function refreshIfShowing(...screens) {
 async function laadOpslag() {
   try {
     store.requestPersistence();          // niet op wachten; het is een verzoek
-    const [profiel, stickers, saved, walks] = await Promise.all([
+    const [profiel, stickers, saved, walks, photos, code, okapi] = await Promise.all([
       store.getProfile(), store.listStickers(), store.listSavedRoutes(), store.listWalks(),
+      store.listPhotos(), store.getSetting('parentCode'), store.getSetting('okapiKey'),
     ]);
+    state.photos = photos;
     // Alleen overnemen als er echt een profiel staat; anders het huidige bewaren.
     if (profiel && profiel.naam) state.profile = profiel;
     else store.setProfile(state.profile);
     state.stickers = stickers;
     state.saved = saved;
     state.walks = walks;
+    state.parentCode = code || null;
+    state.okapiKey = okapi || null;
     render();
   } catch (e) {
     // Zonder opslag werkt de app verder; alleen het boek onthoudt niets.
@@ -923,6 +1118,63 @@ async function exportBestand() {
   }
 }
 
+/** Pauze zette alleen een label om. Nu stopt hij het volgen echt — dat scheelt
+ *  accu tijdens een picknick, en de voortgang blijft staan waar je stopte. */
+function togglePauze() {
+  state.pauze = !state.pauze;
+
+  if (state.pauze) {
+    if (walk.stopWatch) walk.stopWatch();
+    if (walk.stopCompass) walk.stopCompass();
+    walk.stopWatch = walk.stopCompass = null;
+  } else if (walk.tracker) {
+    hervatVolgen();
+  }
+  render();
+}
+
+/* ── Offline kaart ──────────────────────────────────────────────────────── */
+
+async function haalOffline() {
+  const r = currentRoute();
+  if (!r || state.offline.busy) return;
+
+  state.offline = { fraction: state.offline.fraction, busy: true, done: 0, total: 0 };
+  render();
+
+  try {
+    await offline.downloadRoute(r, (done, total) => {
+      state.offline.done = done;
+      state.offline.total = total;
+      // Ter plekke bijwerken; hertekenen zou de kaart opnieuw opbouwen.
+      const bar = app.querySelector('.offline__fill');
+      const sub = app.querySelector('.offline--busy .offline__sub');
+      if (bar && total) bar.style.width = `${Math.round(done / total * 100)}%`;
+      if (sub) sub.textContent = `${done} van ${total} tegels`;
+    });
+    state.offline.fraction = await offline.coverage(r);
+  } catch (e) {
+    console.warn('offline ophalen mislukt:', e.message);
+    showNudge('Offline meenemen lukte niet.');
+  } finally {
+    state.offline.busy = false;
+    render();
+  }
+}
+
+/** Bij het openen van een route: staat die al offline? */
+async function checkOffline() {
+  const r = currentRoute();
+  if (!r) return;
+  try {
+    const fraction = await offline.coverage(r);
+    if (fraction !== state.offline.fraction) {
+      state.offline.fraction = fraction;
+      refreshIfShowing('detail');
+    }
+  } catch { /* geen cache-ondersteuning; dan blijft de knop gewoon staan */ }
+}
+
 /** Wandeling vastleggen als er echt gelopen is. Zo blijven de statistieken in
  *  het stickerboek eerlijk: even naar het scherm kijken is geen wandeling. */
 function legWandelingVast() {
@@ -936,6 +1188,57 @@ function legWandelingVast() {
   }).then(() => store.listWalks())
     .then((all) => { state.walks = all; refreshIfShowing('profiel', 'home'); })
     .catch((e) => console.warn('wandeling niet opgeslagen:', e.message));
+}
+
+/* ── De drie tegels in de kindmodus ─────────────────────────────────────── */
+
+function doeHint(key) {
+  const pr = walk.progress;
+  const next = pr && pr.next;
+
+  if (key === 'zoek') {
+    showNudge(next ? (ZOEK_HINT[next.category] || `zoek ${next.naam.toLowerCase()}`)
+                   : 'je hebt alles al gevonden!');
+    return;
+  }
+
+  if (key === 'foto') {
+    app.querySelector('[data-act="foto-file"]')?.click();
+    return;
+  }
+
+  if (key === 'lees') {
+    if (!('speechSynthesis' in window)) { showNudge('voorlezen kan niet op dit toestel'); return; }
+    const d = next && pr.nextDistanceM != null ? Math.round(pr.nextDistanceM) : null;
+    const tekst = next
+      ? `Nog ${d} meter naar ${next.naam}. ${ZOEK_HINT[next.category] || ''}`
+      : 'Je hebt alle punten gevonden. Goed gedaan!';
+    const u = new SpeechSynthesisUtterance(tekst);
+    u.lang = 'nl-NL';
+    u.rate = 0.9;                 // iets langzamer; het is voor een kind
+    speechSynthesis.cancel();     // niet over een vorige heen praten
+    speechSynthesis.speak(u);
+    showNudge('luister…');
+  }
+}
+
+async function bewaarFoto(file) {
+  const pr = walk.progress;
+  try {
+    await store.addPhoto({
+      blob: file,
+      type: file.type,
+      naam: pr && pr.next ? pr.next.naam : null,
+      routeNaam: (currentRoute() || {}).naam || null,
+      lat: state.position ? state.position.lat : null,
+      lon: state.position ? state.position.lon : null,
+    });
+    state.photos = await store.listPhotos();
+    showNudge('foto bewaard!');
+  } catch (e) {
+    console.warn('foto niet bewaard:', e.message);
+    showNudge('foto bewaren lukte niet');
+  }
 }
 
 function showNudge(text) {
@@ -1022,6 +1325,33 @@ async function locate() {
 }
 
 /* ── Zoeken ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Alles wat niet uit de kaarttegels komt: Overpass voor picknicktafels en
+ * uitkijkpunten, OKAPI voor geocaches. Beide optioneel — valt er een uit, dan
+ * krijg je een route met één soort minder in plaats van geen route.
+ */
+async function aanvullen({ lat, lon, radiusM, keys }) {
+  const [overpass, caches] = await Promise.all([
+    supplementFromOverpass({ lat, lon, radiusM, keys }),
+    keys.includes('cache') && state.okapiKey
+      ? searchCaches({ lat, lon, radiusM, key: state.okapiKey })
+      : Promise.resolve([]),
+  ]);
+
+  const cachePois = caches.map((c) => ({
+    category: 'cache', label: c.naam, name: c.naam, icon: 'travel_explore',
+    coord: c.coord,
+    distFromStart: Math.hypot(
+      (c.coord[0] - lon) * 111320 * Math.cos(lat * Math.PI / 180),
+      (c.coord[1] - lat) * 111320),
+  }));
+
+  const failed = [...overpass.failed];
+  if (keys.includes('cache') && state.okapiKey && !cachePois.length) failed.push('cache');
+
+  return { pois: [...overpass.pois, ...cachePois], failed };
+}
 async function zoek() {
   if (!state.position) {
     await locate();
@@ -1041,7 +1371,7 @@ async function zoek() {
     const out = await generateRoutes({
       lat: state.position.lat, lon: state.position.lon,
       targetKm: state.km, chips: pickedKeys(), shape: state.shape,
-      harvester, supplement: supplementFromOverpass,
+      harvester, supplement: aanvullen,
       kidFactor: kidFactor(state.profile.leeftijd),
       onProgress: (step, detail) => {
         state.genStatus = detail;
@@ -1099,7 +1429,9 @@ app.addEventListener('click', (e) => {
 
     case 'open-route':
       state.routeId = Number(el.dataset.route);
+      state.offline = { fraction: 0, busy: false, done: 0, total: 0 };
       go('detail');
+      checkOffline();
       break;
 
     case 'bewaar': bewaarRoute(el); break;
@@ -1115,14 +1447,24 @@ app.addEventListener('click', (e) => {
     }
 
     case 'export': exportBestand(); break;
+    case 'import': app.querySelector('[data-act="import-file"]')?.click(); break;
+    case 'download-offline': haalOffline(); break;
 
-    case 'pauze': state.pauze = !state.pauze; render(); break;
+    case 'edit-profiel':   state.editProfile = true;  render(); break;
+    case 'cancel-profiel': state.editProfile = false; render(); break;
+    case 'set-code':       state.editSetting = 'code';  render(); break;
+    case 'set-okapi':      state.editSetting = 'okapi'; render(); break;
+    case 'cancel-setting': state.editSetting = null;  render(); break;
+
+    case 'pauze': togglePauze(); break;
 
     /* Kompaspermissie vragen vóórdat je het toestel overhandigt — op iOS moet dat
        uit een gebruikersactie komen, en een zesjarige moet geen dialoog wegklikken. */
     case 'to-kind':
       requestCompassPermission().finally(() => go('kind'));
       break;
+
+    case 'hint': doeHint(el.dataset.hint); break;
 
     case 'open-sticker':  claimSticker(); break;
     case 'force-sticker': claimSticker({ force: true }); break;
@@ -1132,10 +1474,77 @@ app.addEventListener('click', (e) => {
     case 'close-lock': state.showLock = false; state.code = ''; render(); break;
     case 'focus-code': focusCode(); break;
 
-    /* Geen code vastgelegd in het ontwerp — vier cijfers volstaat voorlopig. */
+    /* Is er een oudercode ingesteld, dan moet die kloppen. Zo niet, dan volstaat
+       elke vier cijfers — het ontwerp legt geen code vast, dus dat is jouw keuze
+       en niet die van mij. */
     case 'unlock':
-      if (state.code.length === 4) go('onderweg');
+      if (state.code.length !== 4) break;
+      if (state.parentCode && state.code !== state.parentCode) {
+        state.code = '';
+        render();
+        showNudge('die code klopt niet');
+        break;
+      }
+      go('onderweg');
       break;
+  }
+});
+
+app.addEventListener('submit', (e) => {
+  const form = e.target.closest('form[data-act]');
+  if (!form) return;
+  e.preventDefault();
+  const data = new FormData(form);
+
+  if (form.dataset.act === 'save-profiel') {
+    const naam = String(data.get('naam') || '').trim();
+    const leeftijd = Number(data.get('leeftijd'));
+    if (!naam || !Number.isFinite(leeftijd)) return;
+    state.profile = { ...state.profile, naam, leeftijd };
+    state.editProfile = false;
+    render();
+    store.setProfile(state.profile).catch((err) => console.warn('profiel:', err.message));
+    return;
+  }
+
+  if (form.dataset.act === 'save-setting') {
+    const key = form.dataset.key;
+    const raw = String(data.get('waarde') || '').trim();
+
+    if (key === 'code') {
+      const code = raw.replace(/\D/g, '').slice(0, 4);
+      state.parentCode = code.length === 4 ? code : null;
+      store.setSetting('parentCode', state.parentCode);
+    } else if (key === 'okapi') {
+      state.okapiKey = raw || null;
+      store.setSetting('okapiKey', state.okapiKey);
+    }
+    state.editSetting = null;
+    render();
+  }
+});
+
+app.addEventListener('change', async (e) => {
+  const foto = e.target.closest('[data-act="foto-file"]');
+  if (foto && foto.files && foto.files[0]) {
+    await bewaarFoto(foto.files[0]);
+    foto.value = '';
+    return;
+  }
+
+  /* Terugzetten uit een export. */
+  const input = e.target.closest('[data-act="import-file"]');
+  if (!input || !input.files || !input.files[0]) return;
+  try {
+    const text = await input.files[0].text();
+    await store.importAll(JSON.parse(text));
+    await laadOpslag();
+    showNudge('Teruggezet.');
+  } catch (err) {
+    console.warn('import mislukt:', err.message);
+    alert(`Terugzetten lukte niet: ${err.message}`);
+  } finally {
+    input.value = '';
   }
 });
 

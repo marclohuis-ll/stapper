@@ -12,7 +12,14 @@
    keer openen.
    ============================================================================ */
 
-const VERSION = 'stapper-v1';
+const VERSION = 'stapper-v2';
+
+/* Losse cache, gevuld door src/offline.js wanneer je een route offline meeneemt.
+ * Apart gehouden zodat het opruimen van een appversie je gedownloade tegels niet
+ * meeneemt — die zijn duur om opnieuw op te halen en jij staat dan misschien al
+ * in het bos. */
+const TILE_CACHE = 'stapper-tiles';
+const TILE_HOST = 'tiles.openfreemap.org';
 
 const SHELL = [
   './',
@@ -52,7 +59,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    await Promise.all(names.filter((n) => n !== VERSION).map((n) => caches.delete(n)));
+    await Promise.all(names
+      .filter((n) => n !== VERSION && n !== TILE_CACHE)
+      .map((n) => caches.delete(n)));
     await self.clients.claim();
   })());
 });
@@ -70,9 +79,27 @@ self.addEventListener('fetch', (event) => {
   if (own) { event.respondWith(staleWhileRevalidate(req)); return; }
   if (vendor) { event.respondWith(cacheFirst(req)); return; }
 
-  // Tegels, BRouter, Overpass: altijd het netwerk. Cachen daarvan is het
-  // offline-werk dat nog moet gebeuren, en half doen is erger dan niet doen.
+  // Kaarttegels, letters en TileJSON: eerst uit de offline-cache. Wat je vóór
+  // vertrek hebt gedownload werkt dan zonder bereik; de rest gaat naar het
+  // netwerk en wordt níet stilletjes bijgecached — anders zou je denken dat een
+  // route offline klaarstaat omdat je hem toevallig een keer bekeken hebt.
+  if (url.hostname === TILE_HOST) { event.respondWith(tileFirst(req)); return; }
+
+  // BRouter en Overpass: altijd het netwerk. Een route bereken je thuis.
 });
+
+async function tileFirst(req) {
+  const cache = await caches.open(TILE_CACHE);
+  const hit = await cache.match(req.url);
+  if (hit) return hit;
+  try {
+    return await fetch(req);
+  } catch {
+    // Geen bereik en niet gedownload. 204 in plaats van een fout: MapLibre
+    // tekent dan een lege tegel in plaats van de kaart te laten struikelen.
+    return new Response(null, { status: 204 });
+  }
+}
 
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(VERSION);

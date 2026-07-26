@@ -13,7 +13,15 @@
    ============================================================================ */
 
 const DB_NAME = 'stapper';
-const DB_VERSION = 1;
+
+/* Verhoog dit bij elke nieuwe object store, anders draait onupgradeneeded niet
+ * en krijg je "object store not found" op een database die al bestond. De
+ * handler hieronder maakt alleen wat er nog niet is, dus hij is veilig voor
+ * zowel een verse als een bestaande database.
+ *   1 → kv, stickers, routes, walks
+ *   2 → photos
+ */
+const DB_VERSION = 2;
 export const DEFAULT_CHILD = 'kind-1';
 
 let dbPromise = null;
@@ -35,6 +43,10 @@ function open() {
       if (!db.objectStoreNames.contains('walks')) {
         const w = db.createObjectStore('walks', { keyPath: 'id' });
         w.createIndex('childId', 'childId');
+      }
+      if (!db.objectStoreNames.contains('photos')) {
+        const p = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+        p.createIndex('childId', 'childId');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -80,6 +92,17 @@ export async function requestPersistence() {
 export const getProfile = () => tx('kv', 'readonly', (s) => wrap(s.get('profile')));
 export const setProfile = (profile) => tx('kv', 'readwrite', (s) => s.put(profile, 'profile'));
 
+/* ── Losse instellingen ─────────────────────────────────────────────────
+   Oudercode en de opencaching.nl-sleutel. Bewust hier en niet in de broncode:
+   de repo is publiek, dus een sleutel die je commit is een sleutel die je weggeeft.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export const getSetting = (key) => tx('kv', 'readonly', (s) => wrap(s.get(`set:${key}`)));
+export const setSetting = (key, value) =>
+  tx('kv', 'readwrite', (s) => (value === null || value === undefined
+    ? s.delete(`set:${key}`)
+    : s.put(value, `set:${key}`)));
+
 /* ── Stickers ───────────────────────────────────────────────────────────── */
 
 export const addSticker = (sticker) => tx('stickers', 'readwrite', (s) => s.add({
@@ -107,6 +130,19 @@ export const recordWalk = (walk) => tx('walks', 'readwrite', (s) => s.put({
 }));
 
 export const listWalks = () => tx('walks', 'readonly', (s) => wrap(s.getAll()));
+
+/* ── Foto's ─────────────────────────────────────────────────────────────
+   De blob zelf gaat de database in; IndexedDB kan dat en het scheelt een tweede
+   opslagplek. Wel de reden dat foto's níet in de JSON-export zitten: dan wordt
+   het bestand tientallen megabytes en is het geen back-up meer maar een verhuizing.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export const addPhoto = (photo) => tx('photos', 'readwrite', (s) => s.add({
+  childId: DEFAULT_CHILD, at: Date.now(), ...photo,
+}));
+
+export const listPhotos = () => tx('photos', 'readonly', (s) => wrap(s.getAll()));
+export const deletePhoto = (id) => tx('photos', 'readwrite', (s) => s.delete(id));
 
 /* ── Export en import ───────────────────────────────────────────────────── */
 

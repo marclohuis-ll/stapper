@@ -33,7 +33,7 @@ export function simulationSetting(search = location.search) {
  * @param {(pos:{lat:number,lon:number,accuracy:number,at:number}) => void} onUpdate
  * @returns {() => void} stopfunctie
  */
-export function simulateWalk(route, onUpdate, { durationS = 90, tickMs = 700 } = {}) {
+export function simulateWalk(route, onUpdate, { durationS = 90, tickMs = 700, startFraction = 0 } = {}) {
   const coords = route.coords;
   if (!coords || coords.length < 2) return () => {};
 
@@ -42,7 +42,10 @@ export function simulateWalk(route, onUpdate, { durationS = 90, tickMs = 700 } =
   for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + distM(coords[i - 1], coords[i]));
   const total = cum[cum.length - 1];
 
-  const startedAt = performance.now();
+  // Verschoven starttijd, zodat hervatten na een pauze verdergaat waar je was
+  // in plaats van de route opnieuw te beginnen.
+  const begin = Math.max(0, Math.min(0.999, startFraction));
+  const startedAt = performance.now() - begin * durationS * 1000;
   let jitterPhase = 0;
 
   const emit = () => {

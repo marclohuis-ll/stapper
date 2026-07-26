@@ -531,6 +531,32 @@ button { font-family: inherit; color: inherit; }
 }
 .detail__tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 
+/* ── Offline meenemen ───────────────────────────────────────────────────── */
+.offline {
+  position: relative; width: 100%; margin-top: 20px; padding: 15px 16px;
+  display: flex; gap: 13px; align-items: center; text-align: left;
+  border-radius: 24px; border: 1px solid var(--line); background: var(--panel-soft);
+  color: var(--text); font: inherit; cursor: pointer; overflow: hidden;
+}
+.offline--done, .offline--busy { cursor: default; }
+.offline--done { border-color: rgba(201,242,110,.28); background: rgba(201,242,110,.08); }
+.offline__ico {
+  width: 42px; height: 42px; border-radius: 14px; flex: none; display: grid; place-items: center;
+  background: rgba(111,227,208,.12);
+}
+.offline__ico .ms { font-size: 22px; color: var(--mint); }
+.offline--done .offline__ico { background: rgba(201,242,110,.16); }
+.offline--done .offline__ico .ms { color: var(--lime); }
+.offline__text { flex: 1; display: block; min-width: 0; }
+.offline__title { display: block; font-family: var(--f-display); font-weight: 700; font-size: 16px; }
+.offline__sub { display: block; font-size: 12.5px; color: var(--text-66); margin-top: 2px; }
+.offline__chev { font-size: 20px; color: var(--text-35); }
+.offline__bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: rgba(255,255,255,.08);
+}
+.offline__fill { display: block; height: 100%; background: var(--mint); transition: width .2s linear; }
+
 .poi-list { position: relative; }
 .poi-list::before {
   content: ''; position: absolute; left: 19px; top: 16px; bottom: 26px; width: 2px;
@@ -821,6 +847,64 @@ button { font-family: inherit; color: inherit; }
   font-family: var(--f-display); font-weight: 900; font-size: 12px;
   color: var(--ink); opacity: .55;
 }
+
+/* ── Foto's onderweg ────────────────────────────────────────────────────── */
+.fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.foto { margin: 0; }
+.foto img {
+  display: block; width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 18px; background: var(--panel-soft);
+}
+.foto figcaption {
+  font-size: 11px; color: var(--text-66); margin-top: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* De tegels in de kindmodus zijn nu knoppen. */
+.kind__hints .hint {
+  border: 0; cursor: pointer; color: var(--ink); font: inherit;
+  transition: transform .12s var(--ease);
+}
+.kind__hints .hint:active { transform: scale(.96); }
+
+/* ── Instellingen achter het stickerboek ────────────────────────────────── */
+.setting {
+  width: 100%; margin-top: 10px; padding: 14px 16px; display: flex; gap: 13px;
+  align-items: center; text-align: left; border-radius: 22px;
+  border: 1px solid var(--line); background: var(--panel-soft);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.setting > .ms { font-size: 21px; color: var(--mint); flex: none; }
+.setting__text { flex: 1; display: block; min-width: 0; }
+.setting__title { display: block; font-family: var(--f-display); font-weight: 700; font-size: 15.5px; }
+.setting__sub { display: block; font-size: 12.5px; color: var(--text-66); margin-top: 2px; }
+.setting__chev { font-size: 20px; color: var(--text-35); }
+.setting--form { display: block; cursor: default; }
+
+.veld { display: block; }
+.veld--kort { width: 110px; flex: none; }
+.veld__label {
+  display: block; font-size: 12px; color: var(--text-66); margin-bottom: 5px;
+}
+.veld__input {
+  width: 100%; padding: 11px 13px; border-radius: 14px;
+  border: 1px solid var(--line-soft); background: rgba(255,255,255,.06);
+  color: var(--text); font: inherit; font-size: 15px;
+}
+.veld__input:focus { outline: 2px solid var(--lime); outline-offset: 2px; }
+.veld__hint { display: block; font-size: 11.5px; color: var(--text-66); margin-top: 6px; line-height: 1.45; }
+
+.profiel__form { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.profiel__form > .veld { flex: 1; min-width: 140px; }
+.profiel__form-acties {
+  width: 100%; display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px;
+}
+.btn-ghost--sm { flex: none; height: 42px; padding: 0 18px; font-size: 14px; }
+.btn-cta--sm { width: auto; flex: none; height: 42px; padding: 0 22px; font-size: 15px; box-shadow: none; }
+
+.dubbel { display: flex; gap: 10px; }
+.dubbel .btn-export { flex: 1; }
+.verborgen-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 .btn-export {
   margin-top: 26px; width: 100%; height: 54px; border-radius: 999px;
