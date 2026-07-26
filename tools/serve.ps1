@@ -87,6 +87,12 @@ while ($true) {
       $full = $null
       try { $full = [System.IO.Path]::GetFullPath((Join-Path $Root ($rel -replace '/', '\'))) } catch { }
 
+      # Een map serveert haar index.html, net als GitHub Pages. Zonder dit gedraagt
+      # de dev-server zich anders dan de plek waar het uiteindelijk staat.
+      if ($full -and (Test-Path $full -PathType Container)) {
+        $full = Join-Path $full 'index.html'
+      }
+
       if ($full -and $full.StartsWith($Root) -and (Test-Path $full -PathType Leaf)) {
         $status = 200
         $ext = [System.IO.Path]::GetExtension($full).ToLower()
