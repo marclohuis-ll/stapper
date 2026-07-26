@@ -17,13 +17,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/serve.ps1
 
 Dan <http://localhost:5173/>.
 
-**Testlocatie zonder GPS.** Hang `?at=<lat>,<lon>` aan de URL om een startpunt te
-forceren — handig om te ontwikkelen en om een gebied te proberen waar je niet
-staat. De locatiepil zegt dan dat het geen echte fix is.
+### Ontwikkelschakelaars
+
+| Parameter | Doet |
+| --- | --- |
+| `?at=<lat>,<lon>` | forceert het startpunt — een gebied proberen waar je niet staat. De locatiepil zegt dan dat het geen echte fix is |
+| `?sim` | bootst de wandeling na: loopt de route in 90 s af met wisselende GPS-nauwkeurigheid, zodat *onderweg* en *kindmodus* zonder GPS te bekijken zijn. `?sim=30` voor 30 s |
+| `?sw` | zet de service worker óók op localhost aan (staat daar standaard uit, zie hieronder) |
 
 ```
-http://localhost:5173/?at=52.247,6.755#/instellen
+http://localhost:5173/?at=52.247,6.755&sim=60#/instellen
 ```
+
+De service worker is op localhost uitgeschakeld en ruimt zich daar zelfs actief
+op. Hij serveert namelijk met voorkeur de gecachete versie — precies goed op je
+telefoon, en precies verkeerd tijdens ontwikkelen, want dan bewerk je een
+bestand en kijk je naar de vorige versie.
 
 ## Hoe het werkt
 
@@ -63,6 +72,9 @@ Details en meetwaarden: [spike/BEVINDINGEN.md](spike/BEVINDINGEN.md).
 | [src/map-style.js](src/map-style.js) | kaartstijl in het Boslamp-palet + oogst-stijl |
 | [src/mapview.js](src/mapview.js) | één MapLibre-instantie die tussen schermen verhuist |
 | [src/geolocate.js](src/geolocate.js) | positie, met duidelijke fout bij http |
+| [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel |
+| [src/compass.js](src/compass.js) | kompas voor de kindmodus, gedempt over de eenheidscirkel |
+| [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
 | [spike/](spike) | testbanken en meetresultaten |
 | [tools/serve.ps1](tools/serve.ps1) | dev-server (geen node of python op deze machine) |
 | [design/](design) | het geïmporteerde designdocument, ongewijzigd |
@@ -80,9 +92,9 @@ linken.
 | `#/zoeken` | Zoeken, met echte voortgang | echt |
 | `#/resultaten` | Gevonden rondjes | echt |
 | `#/detail` | Route op de kaart + punten onderweg | echt |
-| `#/onderweg` | Live wandeling | **nog demo** |
-| `#/kind` | Kindmodus | **nog demo** |
-| `#/profiel` | Stickerboek | **nog demo** |
+| `#/onderweg` | Live wandeling: kaart, voortgang, volgend punt | echt |
+| `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
+| `#/profiel` | Stickerboek, bewaarde rondjes, export | echt |
 
 ## Feature flags
 
@@ -106,12 +118,41 @@ Uit het ontwerpgesprek, voor wie zich afvraagt waarom iets zo is:
 - Beloning achter GPS-nabijheid met ruime drempel en een ontsnappingsluik.
 - Één kind, vast profiel. Leeftijd bepaalt het looptempo.
 
-## Nog te doen
+## Onderweg en kindmodus
 
-- **Live tracking** voor *onderweg* en *kindmodus*: `watchPosition`, voortgang
-  langs de route, compasnaald, en de sticker achter GPS-nabijheid.
-- **Opslag**: profiel, bewaarde rondjes en stickerboek in IndexedDB, plus de
-  JSON-exportknop.
+Tracking loopt over die twee schermen heen: heen en weer wisselen laat de
+wandeling doorlopen. Drie dingen die niet uit het ontwerp af te lezen zijn:
+
+- **Voortgang valt nooit terug.** De positie wordt op de routelijn geprojecteerd
+  binnen een venster rond de vorige plek, niet globaal. Een globale zoektocht
+  plakt je op de terugweg van een heen-en-terug meteen aan het eind, en één
+  wilde fix onder de bomen zou je kilometers terugzetten.
+- **Een punt telt ook als je er langs bént gelopen**, niet alleen als je er op
+  een meetmoment dichtbij was. Onder een bladerdek vallen updates weg, en dan
+  spring je zo over een punt heen.
+- **De sticker-gate rekent de gerapporteerde nauwkeurigheid mee** (drempel 40–90 m)
+  en kan het nooit onterecht tegenhouden: na een mislukte poging verschijnt er
+  "toch gevonden" onder de knop.
+
+## Opslag
+
+Alles in IndexedDB op dit ene toestel — er is geen backend, dat was beslissing 1.
+Profiel, stickers, bewaarde rondjes en gelopen wandelingen. `navigator.storage.persist()`
+wordt gevraagd zodat Android het niet opruimt als de telefoon vol raakt.
+
+Een bewaard rondje bevat de hele geometrie (een paar kB), dus je kunt hem later
+opnieuw lopen zonder opnieuw te genereren, ook zonder bereik.
+
+Twee dingen die geen bug zijn maar een keuze. Onder 250 meter gelopen telt niet
+als wandeling — even naar het scherm kijken hoort de statistieken niet te
+vervuilen. En elke sticker krijgt een `childId` mee terwijl er één kind is: dat
+kost nu één veld en scheelt later een schemamigratie die je zou moeten testen
+tegen de echte, opgebouwde geschiedenis van je kind.
+
+De exportknop onderin het stickerboek schrijft alles als JSON weg. Dat is de
+enige back-up die er is.
+
+## Nog te doen
 - **Offline**: service worker, en de vectortiles van de gekozen route vóór
   vertrek in de Cache API.
 - **Geocaches**: wacht op de opencaching.nl-key.

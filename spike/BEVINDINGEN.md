@@ -175,3 +175,51 @@ in plaats van rond het startpunt gespreid.
 
 Gemeten op doel 4,5 km: 4,8 km zonder speeltuin (7% afwijking) en 6,8 km met
 alles erin.
+
+---
+
+# Meting 4 — live tracking
+
+Niet te testen achter een bureau, dus met [simulate.js](../src/simulate.js): de
+route in 25 tot 120 seconden aflopen met een nauwkeurigheid die tussen 8 en 35 m
+heen en weer beweegt, zoals onder een bladerdek.
+
+## Twee fouten die de simulatie blootlegde
+
+**Een punt telt niet als je er alleen langs *gemeten* bent.** In de simulatie
+liggen de meetmomenten 360 m uit elkaar; de wandelaar liep het bruggetje voorbij
+zonder ooit binnen de drempel van 40 m te vallen, en "volgende punt" bleef op
+het bruggetje staan terwijl de afstand groeide.
+
+Dat is geen simulatie-artefact: onder een bladerdek vallen echte GPS-updates ook
+weg. Opgelost door óók te kijken of je voortgang langs de lijn het punt is
+gepasseerd — mits dat punt binnen 60 m van de lijn ligt, want een punt dat 200 m
+naast de route staat heb je niet gezien door er langs te lopen.
+
+**De service worker serveerde een half uur lang oude code.** De app draaide op
+demo-constanten die ik al verwijderd had, met "320 m" en "42%" als
+verklikkers. Stale-while-revalidate is precies goed op de telefoon en precies
+verkeerd tijdens ontwikkelen. Bovendien houdt een pagina zijn controller ook na
+`unregister()`, dus de oude worker bleef de oude `app.js` leveren, die zichzelf
+opnieuw registreerde. Nu: op localhost registreert hij niet en ruimt hij zich
+actief op, tenzij je `?sw` meegeeft.
+
+## Wat verder bleek
+
+De naald en zijn zweefanimatie kunnen niet in hetzelfde element: `animation` en
+`transform` vechten om dezelfde eigenschap en de animatie wint altijd. Dat was
+in het designdocument ook al zo — daar verdween de bedoelde rotatie van 26°
+stilzwijgend. Nu twee lagen: de buitenste draait naar het doel, de binnenste
+zweeft.
+
+Magnetometerwaarden moeten gedempt worden over de eenheidscirkel, niet over
+graden: een gewoon gemiddelde springt bij de overgang van 359° naar 0° naar het
+zuiden.
+
+## Doorloop, gemeten
+
+Route van 9,0 km in 25 s gesimuleerd: 0,5 → 3,0 → 5,0 km, balk 6% → 34% → 56%,
+ETA loopt af, punten worden onderweg afgevinkt en "volgende punt" schuift door
+van bruggetje naar speeltuin naar pauzeplek. De sticker-gate weigert op 2.137 m
+met "nog 2137 meter!", biedt daarna het ontsnappingsluik, en reikt bij forceren
+de sticker van de juiste soort uit.
