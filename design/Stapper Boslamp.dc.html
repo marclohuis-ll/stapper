@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;700;900&family=Figtree:wght@400;500;600&family=Fredoka:wght@500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#08120F; }
+  a { color:#C9F26E; text-decoration:none; }
+  a:hover { color:#FFB26B; }
+  @keyframes riseIn { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes glowPulse { 0%,100%{ opacity:.45; transform:scale(1); } 50%{ opacity:.9; transform:scale(1.08); } }
+  @keyframes float { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-9px) } }
+  @keyframes spinSlow { to { transform:rotate(360deg) } }
+  @keyframes crawl { to { stroke-dashoffset:-40 } }
+  @keyframes popIn { 0%{ transform:scale(.6); opacity:0 } 60%{ transform:scale(1.06); opacity:1 } 100%{ transform:scale(1) } }
+  @keyframes sway { 0%,100%{ transform:rotate(-9deg) } 50%{ transform:rotate(9deg) } }
+</style>
+</helmet>
+
+<div style="position:relative;display:flex;gap:46px;align-items:flex-start;padding:52px;font-family:'Figtree',sans-serif;color:#EAF3EA;background:radial-gradient(900px 600px at 12% 8%, rgba(30,111,82,.5), transparent 65%),radial-gradient(700px 500px at 88% 92%, rgba(201,242,110,.12), transparent 60%),#08120F;">
+
+  <div style="width:226px;position:sticky;top:52px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:34px;height:34px;border-radius:12px;background:#C9F26E;display:flex;align-items:center;justify-content:center;">
+        <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#0C1A17;">forest</span>
+      </div>
+      <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:24px;letter-spacing:-.03em;">Stapper</div>
+    </div>
+    <div style="font-size:13px;line-height:1.6;color:rgba(234,243,234,.75);margin-top:12px;">Wandelroutes die kinderen zelf willen lopen. Schemerdonker voor de ouder, knalgroen daglicht voor het kind.</div>
+    <div style="height:1px;background:rgba(255,255,255,.1);margin:20px 0;"></div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <sc-for list="{{ nav }}" as="s" hint-placeholder-count="9">
+        <button onClick="{{ s.go }}" style="{{ s.style }}">
+          <span style="font-family:'Material Symbols Rounded';font-size:19px;">{{ s.icon }}</span>
+          <span>{{ s.label }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="position:relative;">
+    <sc-if value="{{ ouderView }}" hint-placeholder-val="{{ true }}">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" width="{{ 412 }}" height="{{ 892 }}" dark="{{ true }}" hint-size="412px,892px">
+
+        <!-- WELKOM -->
+        <sc-if value="{{ isWelkom }}" hint-placeholder-val="{{ true }}">
+          <div style="min-height:100%;box-sizing:border-box;position:relative;overflow:hidden;background:radial-gradient(420px 320px at 76% 12%, rgba(30,111,82,.75), transparent 70%),radial-gradient(360px 300px at 12% 88%, rgba(201,242,110,.16), transparent 70%),#0C1A17;padding:40px 28px 28px;display:flex;flex-direction:column;">
+            <div style="position:absolute;right:-90px;top:-40px;width:300px;height:300px;border-radius:999px;background:rgba(201,242,110,.1);filter:blur(6px);animation:glowPulse 7s ease-in-out infinite;"></div>
+            <div style="position:relative;width:78px;height:78px;border-radius:26px;background:#C9F26E;display:flex;align-items:center;justify-content:center;box-shadow:0 18px 50px rgba(201,242,110,.34);animation:float 5s ease-in-out infinite;">
+              <span style="font-family:'Material Symbols Rounded';font-size:42px;color:#0C1A17;">forest</span>
+            </div>
+            <div style="position:relative;font-family:'Gabarito',sans-serif;font-weight:900;font-size:60px;line-height:.92;letter-spacing:-.045em;margin-top:30px;">Lopen wordt<br><span style="color:#C9F26E;">zoeken.</span></div>
+            <div style="position:relative;font-size:17px;line-height:1.62;color:rgba(234,243,234,.82);margin-top:18px;max-width:28ch;">Wij plakken vlonderpaden, kikkerbruggen en verstopte schatten aan elkaar. Jullie lopen ze af.</div>
+            <div style="flex:1;min-height:26px;"></div>
+            <div style="position:relative;display:flex;flex-direction:column;gap:10px;">
+              <sc-for list="{{ welkomPunten }}" as="w" hint-placeholder-count="3">
+                <div style="display:flex;gap:14px;align-items:center;padding:15px 16px;border-radius:20px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);">
+                  <span style="font-family:'Material Symbols Rounded';font-size:22px;color:#C9F26E;">{{ w.icon }}</span>
+                  <span style="font-size:14.5px;color:rgba(234,243,234,.86);">{{ w.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <button onClick="{{ goHome }}" style="position:relative;margin-top:24px;width:100%;height:62px;border:0;border-radius:999px;background:#C9F26E;color:#0C1A17;font-family:'Gabarito',sans-serif;font-size:19px;font-weight:700;cursor:pointer;box-shadow:0 14px 36px rgba(201,242,110,.3);">Schoenen aan</button>
+          </div>
+        </sc-if>
+
+        <!-- START -->
+        <sc-if value="{{ isHome }}">
+          <div style="min-height:100%;box-sizing:border-box;background:radial-gradient(500px 340px at 84% 4%, rgba(30,111,82,.55), transparent 68%),#0C1A17;padding:26px 22px 34px;position:relative;overflow:hidden;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;animation:riseIn .45s cubic-bezier(.16,1,.3,1) both;">
+              <div>
+                <div style="font-size:13px;color:rgba(234,243,234,.72);">Zaterdag · 18° · droog</div>
+                <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:38px;line-height:.98;letter-spacing:-.04em;margin-top:6px;color:#F4FBEF;">Waar gaan<br>we heen?</div>
+              </div>
+              <button onClick="{{ goProfiel }}" style="width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <span style="font-family:'Material Symbols Rounded';font-size:23px;color:#C9F26E;">auto_awesome</span>
+              </button>
+            </div>
+
+            <div style="display:inline-flex;gap:8px;align-items:center;margin-top:18px;padding:9px 14px;border-radius:999px;background:rgba(111,227,208,.12);animation:riseIn .45s .05s cubic-bezier(.16,1,.3,1) both;">
+              <span style="font-family:'Material Symbols Rounded';font-size:17px;color:#6FE3D0;">my_location</span>
+              <span style="font-size:13px;font-weight:500;color:#6FE3D0;">Landgoed Twickel · 12 punten in de buurt</span>
+            </div>
+
+            <button onClick="{{ goInstellen }}" style="position:relative;margin-top:20px;width:100%;text-align:left;cursor:pointer;border:0;border-radius:30px;padding:24px;background:linear-gradient(150deg,#C9F26E,#A9E255);box-shadow:0 22px 50px rgba(201,242,110,.24);overflow:hidden;animation:riseIn .5s .1s cubic-bezier(.16,1,.3,1) both;">
+              <div style="position:absolute;right:-40px;bottom:-60px;width:190px;height:190px;border-radius:999px;background:rgba(12,26,23,.08);"></div>
+              <div style="position:relative;font-family:'Gabarito',sans-serif;font-weight:900;font-size:30px;line-height:1;letter-spacing:-.04em;color:#0C1A17;">Nieuw rondje<br>uitzoeken</div>
+              <div style="position:relative;font-size:13.5px;color:rgba(12,26,23,.7);margin-top:9px;max-width:24ch;">Kies de afstand, de leeftijd en wat jullie onderweg willen zien.</div>
+              <div style="position:relative;display:flex;align-items:center;gap:7px;margin-top:16px;font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#0C1A17;">
+                Beginnen<span style="font-family:'Material Symbols Rounded';font-size:19px;">arrow_forward</span>
+              </div>
+            </button>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;animation:riseIn .5s .16s cubic-bezier(.16,1,.3,1) both;">
+              <button onClick="{{ goResultaten }}" style="text-align:left;cursor:pointer;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.05);border-radius:24px;padding:17px;">
+                <span style="font-family:'Material Symbols Rounded';font-size:26px;color:#FFB26B;">hourglass_top</span>
+                <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:17px;margin-top:10px;">Uurtje weg</div>
+                <div style="font-size:12.5px;color:rgba(234,243,234,.72);margin-top:2px;">± 3 km, veel pauze</div>
+              </button>
+              <button onClick="{{ goResultaten }}" style="text-align:left;cursor:pointer;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.05);border-radius:24px;padding:17px;">
+                <span style="font-family:'Material Symbols Rounded';font-size:26px;color:#6FE3D0;">travel_explore</span>
+                <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:17px;margin-top:10px;">Speurtocht</div>
+                <div style="font-size:12.5px;color:rgba(234,243,234,.72);margin-top:2px;">4 caches onderweg</div>
+              </button>
+            </div>
+
+            <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin:26px 0 6px;">Vaker gelopen</div>
+            <div style="position:relative;">
+              <div style="position:absolute;left:23px;top:12px;bottom:24px;width:2px;background:repeating-linear-gradient(to bottom,rgba(201,242,110,.5) 0 4px,transparent 4px 10px);"></div>
+              <sc-for list="{{ savedRoutes }}" as="r" hint-placeholder-count="3">
+                <button onClick="{{ goDetail }}" style="position:relative;width:100%;text-align:left;cursor:pointer;background:transparent;border:0;padding:11px 0;display:flex;gap:14px;align-items:center;">
+                  <div style="width:48px;height:48px;border-radius:16px;background:rgba(201,242,110,.14);display:flex;align-items:center;justify-content:center;flex:none;">
+                    <span style="font-family:'Material Symbols Rounded';font-size:22px;color:#C9F26E;">{{ r.icon }}</span>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:16.5px;">{{ r.naam }}</div>
+                    <div style="font-size:12.5px;color:rgba(234,243,234,.66);margin-top:2px;">{{ r.meta }}</div>
+                  </div>
+                  <span style="font-family:'Material Symbols Rounded';font-size:20px;color:rgba(234,243,234,.35);">chevron_right</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ROUTE INSTELLEN -->
+        <sc-if value="{{ isInstellen }}">
+          <div style="min-height:100%;box-sizing:border-box;background:#0C1A17;padding:0 0 118px;position:relative;">
+            <div style="position:sticky;top:0;z-index:6;background:rgba(12,26,23,.94);padding:18px 22px 14px;display:flex;align-items:center;gap:12px;">
+              <button onClick="{{ goHome }}" style="width:40px;height:40px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#EAF3EA;">arrow_back</span>
+              </button>
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.02em;">Rondje uitzoeken</div>
+            </div>
+
+            <div style="padding:8px 22px 0;">
+              <div style="position:relative;border-radius:28px;padding:22px;background:radial-gradient(240px 160px at 88% 8%, rgba(201,242,110,.18), transparent 70%),rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);overflow:hidden;">
+                <div style="font-size:13px;color:rgba(234,243,234,.72);">Hoe ver mogen de beentjes?</div>
+                <div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px;">
+                  <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:76px;line-height:.86;letter-spacing:-.05em;color:#C9F26E;">{{ kmLabel }}</div>
+                  <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:22px;color:rgba(234,243,234,.72);padding-bottom:8px;">km</div>
+                </div>
+                <input type="range" min="1" max="12" step="0.5" value="{{ km }}" onChange="{{ onKm }}" style="width:100%;margin-top:14px;accent-color:#C9F26E;height:26px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(234,243,234,.4);">
+                  <span>1 km</span><span style="color:#FFB26B;">{{ tijdLabel }}</span><span>12 km</span>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:12px;margin-top:14px;">
+                <div style="flex:1;display:flex;gap:11px;align-items:center;padding:15px;border-radius:22px;background:rgba(111,227,208,.1);border:1px solid rgba(111,227,208,.2);">
+                  <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#6FE3D0;">my_location</span>
+                  <div>
+                    <div style="font-size:11.5px;color:rgba(234,243,234,.66);">Startpunt</div>
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:14.5px;">Hier waar ik sta</div>
+                  </div>
+                </div>
+                <button onClick="{{ toggleRondje }}" style="{{ rondjeStyle }}">
+                  <span style="font-family:'Material Symbols Rounded';font-size:20px;">{{ rondjeIcon }}</span>
+                  <div style="text-align:left;">
+                    <div style="font-size:11.5px;opacity:.6;">Vorm</div>
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:14.5px;">{{ rondjeLabel }}</div>
+                  </div>
+                </button>
+              </div>
+
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin:26px 0 10px;">Leeftijd van het kind</div>
+              <div style="display:flex;gap:9px;">
+                <sc-for list="{{ ages }}" as="a" hint-placeholder-count="5">
+                  <button onClick="{{ a.pick }}" style="{{ a.style }}">
+                    <span style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:21px;letter-spacing:-.03em;">{{ a.label }}</span>
+                    <span style="font-size:10.5px;opacity:.6;">jaar</span>
+                  </button>
+                </sc-for>
+              </div>
+
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin:26px 0 10px;">Onderweg moet er zijn</div>
+              <div style="display:flex;flex-wrap:wrap;gap:9px;">
+                <sc-for list="{{ chips }}" as="c" hint-placeholder-count="6">
+                  <button onClick="{{ c.toggle }}" style="{{ c.style }}">
+                    <span style="font-family:'Material Symbols Rounded';font-size:19px;line-height:1;">{{ c.icon }}</span>
+                    <span>{{ c.label }}</span>
+                  </button>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ geocachesAan }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ toggleCache }}" style="{{ cacheStyle }}">
+                  <div style="width:48px;height:48px;border-radius:16px;background:rgba(255,178,107,.16);display:flex;align-items:center;justify-content:center;flex:none;">
+                    <span style="font-family:'Material Symbols Rounded';font-size:25px;color:#FFB26B;">travel_explore</span>
+                  </div>
+                  <div style="flex:1;text-align:left;">
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:17px;">Geocaches meenemen</div>
+                    <div style="font-size:12.5px;color:rgba(234,243,234,.72);margin-top:2px;">{{ cacheSub }}</div>
+                  </div>
+                  <div style="{{ switchTrack }}"><div style="{{ switchKnob }}"></div></div>
+                </button>
+              </sc-if>
+            </div>
+
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:16px 22px 22px;background:linear-gradient(to top,#0C1A17 66%,rgba(12,26,23,0));">
+              <button onClick="{{ zoek }}" style="width:100%;height:62px;border:0;border-radius:999px;background:#C9F26E;color:#0C1A17;font-family:'Gabarito',sans-serif;font-size:19px;font-weight:700;cursor:pointer;box-shadow:0 14px 36px rgba(201,242,110,.28);">Zoek paadjes</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ZOEKEN -->
+        <sc-if value="{{ isZoeken }}">
+          <div style="min-height:100%;box-sizing:border-box;background:radial-gradient(400px 400px at 50% 42%, rgba(30,111,82,.8), transparent 70%),#0C1A17;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:44px;">
+            <div style="position:relative;width:210px;height:210px;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;inset:0;border-radius:999px;background:rgba(201,242,110,.18);filter:blur(14px);animation:glowPulse 2.6s ease-in-out infinite;"></div>
+              <div style="position:absolute;inset:8px;border-radius:999px;border:2px dashed rgba(201,242,110,.45);animation:spinSlow 12s linear infinite;"></div>
+              <div style="width:104px;height:104px;border-radius:999px;background:#C9F26E;display:flex;align-items:center;justify-content:center;box-shadow:0 16px 44px rgba(201,242,110,.4);">
+                <span style="font-family:'Material Symbols Rounded';font-size:52px;color:#0C1A17;animation:sway 3s ease-in-out infinite;">explore</span>
+              </div>
+            </div>
+            <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:34px;letter-spacing:-.04em;margin-top:38px;text-align:center;">Paadjes zoeken…</div>
+            <div style="font-size:14.5px;line-height:1.6;color:rgba(234,243,234,.75);margin-top:10px;text-align:center;max-width:30ch;">We leggen vlonderpaden, speeltuinen en 4 caches aan elkaar tot één rondje.</div>
+          </div>
+        </sc-if>
+
+        <!-- RESULTATEN -->
+        <sc-if value="{{ isResultaten }}">
+          <div style="min-height:100%;box-sizing:border-box;background:#0C1A17;padding:0 0 28px;">
+            <div style="position:sticky;top:0;z-index:6;background:rgba(12,26,23,.94);padding:18px 22px 14px;display:flex;align-items:center;gap:12px;">
+              <button onClick="{{ goInstellen }}" style="width:40px;height:40px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#EAF3EA;">arrow_back</span>
+              </button>
+              <div>
+                <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.02em;">Drie rondjes gevonden</div>
+                <div style="font-size:12px;color:rgba(234,243,234,.66);">{{ filterLabel }}</div>
+              </div>
+            </div>
+            <div style="padding:6px 22px;display:flex;flex-direction:column;gap:16px;">
+              <sc-for list="{{ routes }}" as="r" hint-placeholder-count="3">
+                <button onClick="{{ r.open }}" style="{{ r.cardStyle }}">
+                  <div style="height:124px;position:relative;overflow:hidden;background:radial-gradient(120px 90px at 24% 78%, rgba(30,111,82,.85), transparent 72%),radial-gradient(130px 100px at 80% 24%, rgba(30,111,82,.6), transparent 70%),radial-gradient(80px 60px at 62% 88%, rgba(111,227,208,.4), transparent 70%),#10231E;">
+                    <svg viewBox="0 0 372 124" style="position:absolute;inset:0;width:100%;height:100%;">
+                      <path d="M34 96 C 86 46, 134 104, 188 64 S 298 38, 340 78" fill="none" stroke="#C9F26E" stroke-width="3" stroke-dasharray="1 8" stroke-linecap="round" style="animation:crawl 3s linear infinite;"></path>
+                      <circle cx="34" cy="96" r="6" fill="#EAF3EA"></circle>
+                      <circle cx="340" cy="78" r="7" fill="#C9F26E"></circle>
+                    </svg>
+                    <div style="position:absolute;left:14px;top:14px;padding:5px 11px;border-radius:999px;background:rgba(12,26,23,.7);font-size:11.5px;font-weight:600;color:#C9F26E;">{{ r.badge }}</div>
+                  </div>
+                  <div style="padding:18px;">
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:23px;letter-spacing:-.035em;line-height:1;">{{ r.naam }}</div>
+                    <div style="font-size:13.5px;line-height:1.55;color:rgba(234,243,234,.78);margin-top:8px;">{{ r.omschrijving }}</div>
+                    <div style="display:flex;gap:8px;margin-top:14px;">
+                      <span style="padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:500;">{{ r.km }}</span>
+                      <span style="padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:500;">{{ r.tijd }}</span>
+                      <span style="padding:5px 11px;border-radius:999px;background:rgba(201,242,110,.15);color:#C9F26E;font-size:12px;font-weight:600;">{{ r.punten }}</span>
+                    </div>
+                  </div>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ROUTEDETAIL -->
+        <sc-if value="{{ isDetail }}">
+          <div style="min-height:100%;box-sizing:border-box;background:#0C1A17;padding:0 0 120px;position:relative;">
+            <div style="height:310px;position:relative;overflow:hidden;background:radial-gradient(160px 130px at 20% 74%, rgba(30,111,82,.9), transparent 72%),radial-gradient(190px 150px at 84% 26%, rgba(30,111,82,.7), transparent 70%),radial-gradient(110px 80px at 58% 90%, rgba(111,227,208,.42), transparent 70%),#10231E;">
+              <svg viewBox="0 0 396 310" style="position:absolute;inset:0;width:100%;height:100%;">
+                <path d="M52 256 C 108 210, 74 144, 148 130 S 268 160, 292 90 S 332 56, 356 46" fill="none" stroke="#C9F26E" stroke-width="3.5" stroke-dasharray="2 10" stroke-linecap="round" style="animation:crawl 4s linear infinite;"></path>
+                <circle cx="52" cy="256" r="8" fill="#EAF3EA"></circle>
+                <circle cx="148" cy="130" r="9" fill="#0C1A17" stroke="#C9F26E" stroke-width="3"></circle>
+                <circle cx="292" cy="90" r="9" fill="#0C1A17" stroke="#FFB26B" stroke-width="3"></circle>
+                <circle cx="356" cy="46" r="9" fill="#C9F26E"></circle>
+              </svg>
+              <button onClick="{{ goResultaten }}" style="position:absolute;left:18px;top:18px;width:42px;height:42px;border-radius:999px;border:0;background:rgba(12,26,23,.72);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#EAF3EA;">arrow_back</span>
+              </button>
+            </div>
+
+            <div style="margin-top:-34px;border-radius:34px 34px 0 0;background:#0C1A17;padding:26px 22px 0;position:relative;">
+              <div style="width:44px;height:4px;border-radius:999px;background:rgba(255,255,255,.16);margin:0 auto 18px;"></div>
+              <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:34px;line-height:.98;letter-spacing:-.045em;color:#F4FBEF;">Kikkerbrug-<br>rondje</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+                <span style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12.5px;font-weight:500;">4,5 km</span>
+                <span style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12.5px;font-weight:500;">± 1 u 40</span>
+                <span style="padding:6px 12px;border-radius:999px;background:rgba(111,227,208,.14);color:#6FE3D0;font-size:12.5px;font-weight:600;">Kinderwagen: bijna overal</span>
+              </div>
+
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin:26px 0 8px;">Onderweg kom je langs</div>
+              <div style="position:relative;">
+                <div style="position:absolute;left:19px;top:16px;bottom:26px;width:2px;background:repeating-linear-gradient(to bottom,rgba(201,242,110,.45) 0 4px,transparent 4px 10px);"></div>
+                <sc-for list="{{ pois }}" as="p" hint-placeholder-count="6">
+                  <div style="position:relative;display:flex;gap:14px;align-items:center;padding:11px 0;">
+                    <div style="width:40px;height:40px;border-radius:14px;background:#1A2F28;border:1px solid rgba(201,242,110,.25);display:flex;align-items:center;justify-content:center;flex:none;">
+                      <span style="font-family:'Material Symbols Rounded';font-size:21px;color:#C9F26E;">{{ p.icon }}</span>
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:16.5px;">{{ p.naam }}</div>
+                      <div style="font-size:12.5px;color:rgba(234,243,234,.66);margin-top:2px;">{{ p.meta }}</div>
+                    </div>
+                    <div style="font-size:12.5px;font-weight:600;color:rgba(234,243,234,.4);">{{ p.km }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:16px 22px 22px;background:linear-gradient(to top,#0C1A17 66%,rgba(12,26,23,0));display:flex;gap:12px;">
+              <button style="width:62px;height:62px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;">
+                <span style="font-family:'Material Symbols Rounded';font-size:24px;color:#EAF3EA;">bookmark</span>
+              </button>
+              <button onClick="{{ goOnderweg }}" style="flex:1;height:62px;border:0;border-radius:999px;background:#C9F26E;color:#0C1A17;font-family:'Gabarito',sans-serif;font-size:19px;font-weight:700;cursor:pointer;box-shadow:0 14px 36px rgba(201,242,110,.28);">Start de wandeling</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ONDERWEG -->
+        <sc-if value="{{ isOnderweg }}">
+          <div style="min-height:100%;box-sizing:border-box;position:relative;overflow:hidden;background:radial-gradient(220px 180px at 18% 70%, rgba(30,111,82,.9), transparent 72%),radial-gradient(260px 200px at 86% 22%, rgba(30,111,82,.65), transparent 70%),radial-gradient(150px 110px at 62% 90%, rgba(111,227,208,.38), transparent 70%),#10231E;">
+            <svg viewBox="0 0 396 760" style="position:absolute;inset:0;width:100%;height:100%;">
+              <path d="M72 640 C 132 560, 92 448, 172 396 S 302 356, 302 232 S 332 128, 344 74" fill="none" stroke="rgba(234,243,234,.18)" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 11"></path>
+              <path d="M72 640 C 132 560, 92 448, 172 396" fill="none" stroke="#C9F26E" stroke-width="5" stroke-linecap="round"></path>
+              <circle cx="302" cy="232" r="9" fill="#10231E" stroke="#FFB26B" stroke-width="3"></circle>
+              <circle cx="344" cy="74" r="9" fill="#10231E" stroke="#C9F26E" stroke-width="3"></circle>
+            </svg>
+            <div style="position:absolute;left:150px;top:374px;width:44px;height:44px;border-radius:999px;background:rgba(201,242,110,.3);filter:blur(6px);animation:glowPulse 2.4s ease-in-out infinite;"></div>
+            <div style="position:absolute;left:160px;top:384px;width:24px;height:24px;border-radius:999px;background:#C9F26E;border:3px solid #0C1A17;"></div>
+
+            <div style="position:relative;padding:16px 16px 0;display:flex;gap:12px;">
+              <button onClick="{{ goDetail }}" style="width:44px;height:44px;border-radius:999px;border:0;background:rgba(12,26,23,.75);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;">
+                <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#EAF3EA;">close</span>
+              </button>
+              <div style="flex:1;border-radius:20px;padding:11px 15px;background:rgba(12,26,23,.75);border:1px solid rgba(255,255,255,.08);">
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;">
+                  <span>1,9 van 4,5 km</span><span style="color:#FFB26B;">nog ± 55 min</span>
+                </div>
+                <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.12);margin-top:9px;overflow:hidden;">
+                  <div style="width:42%;height:100%;border-radius:999px;background:#C9F26E;"></div>
+                </div>
+              </div>
+            </div>
+
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:16px;">
+              <div style="border-radius:30px;padding:20px;background:rgba(12,26,23,.9);border:1px solid rgba(255,255,255,.1);box-shadow:0 -20px 60px rgba(0,0,0,.4);">
+                <div style="display:flex;gap:14px;align-items:center;">
+                  <div style="position:relative;width:58px;height:58px;flex:none;display:flex;align-items:center;justify-content:center;">
+                    <div style="position:absolute;inset:0;border-radius:20px;background:rgba(201,242,110,.2);animation:glowPulse 2.8s ease-in-out infinite;"></div>
+                    <span style="font-family:'Material Symbols Rounded';font-size:28px;color:#C9F26E;position:relative;">water</span>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(234,243,234,.66);">Volgende punt · 320 m</div>
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:24px;letter-spacing:-.035em;margin-top:3px;">De kikkerbrug</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:18px;">
+                  <button style="flex:1;height:54px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#EAF3EA;font-family:'Gabarito',sans-serif;font-size:15.5px;font-weight:700;cursor:pointer;">Pauze</button>
+                  <button onClick="{{ goKind }}" style="flex:2;height:54px;border-radius:999px;border:0;background:#C9F26E;color:#0C1A17;font-family:'Gabarito',sans-serif;font-size:15.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+                    <span style="font-family:'Material Symbols Rounded';font-size:20px;">child_care</span>Kind wijst de weg
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- STICKERBOEK -->
+        <sc-if value="{{ isProfiel }}">
+          <div style="min-height:100%;box-sizing:border-box;background:#0C1A17;padding:0 0 34px;">
+            <div style="position:relative;overflow:hidden;padding:22px 22px 30px;background:radial-gradient(300px 220px at 84% 6%, rgba(30,111,82,.85), transparent 72%),radial-gradient(280px 200px at 8% 96%, rgba(30,111,82,.5), transparent 70%),#0E201B;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <button onClick="{{ goHome }}" style="width:40px;height:40px;border-radius:999px;border:0;background:rgba(255,255,255,.1);cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                  <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#EAF3EA;">arrow_back</span>
+                </button>
+                <div style="font-size:13px;color:rgba(234,243,234,.75);">Stickerboek van</div>
+              </div>
+              <div style="display:flex;gap:16px;align-items:center;margin-top:18px;">
+                <div style="width:66px;height:66px;border-radius:22px;background:#C9F26E;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 12px 30px rgba(201,242,110,.3);">
+                  <span style="font-family:'Fredoka',sans-serif;font-weight:700;font-size:30px;color:#0C1A17;">S</span>
+                </div>
+                <div>
+                  <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:30px;letter-spacing:-.04em;color:#F4FBEF;">Sem, 6 jaar</div>
+                  <div style="font-size:13px;color:rgba(234,243,234,.75);margin-top:3px;">14 wandelingen · 38,2 km · 9 stickers</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:22px;">
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin-bottom:12px;">Verzameld</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                <sc-for list="{{ stickers }}" as="s" hint-placeholder-count="12">
+                  <div style="{{ s.style }}">
+                    <span style="font-family:'Material Symbols Rounded';font-size:29px;">{{ s.icon }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:15px;color:#C9F26E;margin:28px 0 6px;">Bewaarde rondjes</div>
+              <sc-for list="{{ savedRoutes }}" as="r" hint-placeholder-count="3">
+                <button onClick="{{ goDetail }}" style="width:100%;text-align:left;cursor:pointer;background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.07);padding:14px 0;display:flex;gap:14px;align-items:center;">
+                  <div style="width:46px;height:46px;border-radius:16px;background:rgba(111,227,208,.12);display:flex;align-items:center;justify-content:center;flex:none;">
+                    <span style="font-family:'Material Symbols Rounded';font-size:21px;color:#6FE3D0;">{{ r.icon }}</span>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-family:'Gabarito',sans-serif;font-weight:700;font-size:16.5px;">{{ r.naam }}</div>
+                    <div style="font-size:12.5px;color:rgba(234,243,234,.66);margin-top:2px;">{{ r.meta }}</div>
+                  </div>
+                  <span style="font-family:'Material Symbols Rounded';font-size:20px;color:rgba(234,243,234,.35);">chevron_right</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </x-import>
+    </sc-if>
+
+    <!-- KINDMODUS -->
+    <sc-if value="{{ isKind }}">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" width="{{ 412 }}" height="{{ 892 }}" hint-size="412px,892px">
+        <div style="min-height:100%;box-sizing:border-box;background:radial-gradient(300px 240px at 50% 34%, #E4FF9A, transparent 70%),#C9F26E;padding:20px 20px 24px;display:flex;flex-direction:column;position:relative;overflow:hidden;">
+          <div style="position:absolute;left:-60px;bottom:-70px;width:260px;height:260px;border-radius:999px;background:rgba(12,26,23,.05);"></div>
+
+          <div style="position:relative;display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;gap:7px;align-items:center;background:rgba(12,26,23,.08);border-radius:999px;padding:8px 14px;">
+              <sc-for list="{{ voortgang }}" as="v" hint-placeholder-count="6">
+                <div style="{{ v.style }}"></div>
+              </sc-for>
+              <span style="font-family:'Fredoka',sans-serif;font-weight:600;font-size:14px;color:#0C1A17;margin-left:5px;">3/6</span>
+            </div>
+            <button onClick="{{ openLock }}" style="display:flex;align-items:center;gap:7px;border:0;background:rgba(12,26,23,.08);border-radius:999px;padding:9px 15px;cursor:pointer;">
+              <span style="font-family:'Material Symbols Rounded';font-size:18px;color:#0C1A17;">lock</span>
+              <span style="font-family:'Fredoka',sans-serif;font-weight:500;font-size:14px;color:#0C1A17;">papa</span>
+            </button>
+          </div>
+
+          <div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div style="position:relative;width:280px;height:280px;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;inset:0;border-radius:999px;background:rgba(255,255,255,.45);"></div>
+              <div style="position:absolute;inset:16px;border-radius:999px;border:4px dashed rgba(12,26,23,.16);animation:spinSlow 30s linear infinite;"></div>
+              <span style="font-family:'Material Symbols Rounded';font-size:186px;color:#0C1A17;transform:rotate(26deg);animation:float 2.8s ease-in-out infinite;">navigation</span>
+            </div>
+            <div style="font-family:'Fredoka',sans-serif;font-weight:700;font-size:104px;line-height:.86;color:#0C1A17;margin-top:14px;">80<span style="font-size:42px;"> m</span></div>
+            <div style="font-family:'Fredoka',sans-serif;font-weight:600;font-size:26px;color:#0C1A17;opacity:.75;margin-top:8px;text-align:center;">op naar de kikkerbrug!</div>
+          </div>
+
+          <div style="position:relative;display:flex;gap:12px;">
+            <sc-for list="{{ kidHints }}" as="k" hint-placeholder-count="3">
+              <div style="flex:1;background:rgba(255,255,255,.55);border-radius:26px;padding:16px 8px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                <span style="font-family:'Material Symbols Rounded';font-size:34px;color:#0C1A17;">{{ k.icon }}</span>
+                <span style="font-family:'Fredoka',sans-serif;font-weight:600;font-size:14px;color:#0C1A17;text-align:center;">{{ k.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <button onClick="{{ openSticker }}" style="position:relative;margin-top:14px;width:100%;height:96px;border:0;border-radius:34px;background:#0C1A17;color:#C9F26E;font-family:'Fredoka',sans-serif;font-size:34px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:14px;box-shadow:0 14px 34px rgba(12,26,23,.28);">
+            <span style="font-family:'Material Symbols Rounded';font-size:40px;">visibility</span>ik zie het!
+          </button>
+
+          <sc-if value="{{ showSticker }}">
+            <div style="position:absolute;inset:0;background:radial-gradient(340px 300px at 50% 40%, #1E6F52, transparent 72%),#0C1A17;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px;">
+              <div style="position:relative;width:230px;height:230px;display:flex;align-items:center;justify-content:center;animation:popIn .55s cubic-bezier(.16,1,.3,1) both;">
+                <div style="position:absolute;inset:0;border-radius:999px;background:rgba(201,242,110,.25);filter:blur(16px);animation:glowPulse 2.4s ease-in-out infinite;"></div>
+                <div style="width:180px;height:180px;border-radius:999px;background:#C9F26E;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(201,242,110,.45);">
+                  <span style="font-family:'Material Symbols Rounded';font-size:98px;color:#0C1A17;">emoji_nature</span>
+                </div>
+              </div>
+              <div style="font-family:'Fredoka',sans-serif;font-weight:700;font-size:44px;line-height:1;color:#EAF3EA;margin-top:30px;text-align:center;">kikker<br>gevonden!</div>
+              <div style="font-family:'Figtree',sans-serif;font-size:15px;color:rgba(234,243,234,.78);margin-top:12px;text-align:center;">sticker 4 van 6 · in je boek geplakt</div>
+              <button onClick="{{ closeSticker }}" style="margin-top:32px;height:70px;padding:0 42px;border:0;border-radius:999px;background:#C9F26E;color:#0C1A17;font-family:'Fredoka',sans-serif;font-size:24px;font-weight:700;cursor:pointer;">verder lopen</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showLock }}">
+            <div style="position:absolute;inset:0;background:#0C1A17;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px;">
+              <span style="font-family:'Material Symbols Rounded';font-size:40px;color:#C9F26E;">lock_open</span>
+              <div style="font-family:'Gabarito',sans-serif;font-weight:900;font-size:30px;line-height:1.04;letter-spacing:-.04em;color:#EAF3EA;margin-top:16px;text-align:center;">Even voor de<br>grote mensen</div>
+              <div style="font-size:14px;color:rgba(234,243,234,.75);margin-top:10px;text-align:center;">Voer de code in om de kindmodus te verlaten.</div>
+              <div style="display:flex;gap:12px;margin-top:28px;">
+                <sc-for list="{{ codeVakjes }}" as="c" hint-placeholder-count="4">
+                  <div style="{{ c.style }}">{{ c.char }}</div>
+                </sc-for>
+              </div>
+              <button onClick="{{ unlock }}" style="margin-top:30px;height:58px;padding:0 38px;border:0;border-radius:999px;background:#C9F26E;color:#0C1A17;font-family:'Gabarito',sans-serif;font-size:17px;font-weight:700;cursor:pointer;">Ontgrendelen</button>
+              <button onClick="{{ closeLock }}" style="margin-top:10px;height:44px;border:0;background:transparent;color:rgba(234,243,234,.66);font-size:13.5px;cursor:pointer;">terug naar kindmodus</button>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:1010},&quot;geocachesAan&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Functies&quot;},&quot;stickerBeloningen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Functies&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'welkom', km: 4.5, age: 6, rondje: true, cache: true,
+    picked: { speeltuin: true, vlonderpad: true, uitkijk: false, water: true, rust: false, dieren: false },
+    showSticker: false, showLock: false,
+  };
+
+  go = (s) => () => this.setState({ screen: s, showSticker: false, showLock: false });
+
+  renderVals() {
+    const st = this.state;
+    const cacheKaart = this.props.geocachesAan ?? true;
+    const stickersAan = this.props.stickerBeloningen ?? true;
+
+    const km = st.km;
+    const mins = Math.round(km * 22);
+    const stickerIcons = ['emoji_nature', 'forest', 'egg', 'sailing', 'castle', 'pets', 'water_drop', 'park', 'nightlight', 'cake', 'star', 'diamond'];
+
+    const navDefs = [
+      ['welkom', 'Welkom', 'waving_hand'], ['home', 'Start', 'home'],
+      ['instellen', 'Rondje uitzoeken', 'tune'], ['zoeken', 'Zoeken', 'progress_activity'],
+      ['resultaten', 'Drie rondjes', 'list'], ['detail', 'Routedetail', 'map'],
+      ['onderweg', 'Onderweg', 'directions_walk'], ['kind', 'Kindmodus', 'child_care'],
+      ['profiel', 'Stickerboek', 'auto_awesome'],
+    ];
+
+    return {
+      ouderView: st.screen !== 'kind',
+      isWelkom: st.screen === 'welkom', isHome: st.screen === 'home',
+      isInstellen: st.screen === 'instellen', isZoeken: st.screen === 'zoeken',
+      isResultaten: st.screen === 'resultaten', isDetail: st.screen === 'detail',
+      isOnderweg: st.screen === 'onderweg', isKind: st.screen === 'kind',
+      isProfiel: st.screen === 'profiel',
+
+      goHome: this.go('home'), goInstellen: this.go('instellen'),
+      goResultaten: this.go('resultaten'), goDetail: this.go('detail'),
+      goOnderweg: this.go('onderweg'), goKind: this.go('kind'), goProfiel: this.go('profiel'),
+
+      showSticker: st.showSticker && stickersAan,
+      openSticker: () => this.setState({ showSticker: true }),
+      closeSticker: () => this.setState({ showSticker: false }),
+      showLock: st.showLock,
+      openLock: () => this.setState({ showLock: true }),
+      closeLock: () => this.setState({ showLock: false }),
+      unlock: this.go('onderweg'),
+
+      nav: navDefs.map(([k, label, icon]) => ({
+        label, icon, go: this.go(k),
+        style: `display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:14px;cursor:pointer;text-align:left;font-family:'Gabarito',sans-serif;font-size:14.5px;font-weight:700;letter-spacing:-.01em;transition:all .18s cubic-bezier(.16,1,.3,1);border:0;` +
+          (st.screen === k
+            ? `background:#C9F26E;color:#0C1A17;`
+            : `background:rgba(255,255,255,.04);color:rgba(234,243,234,.78);`),
+      })),
+
+      welkomPunten: [
+        { icon: 'near_me', label: 'Rondjes vanaf waar je nu staat' },
+        { icon: 'travel_explore', label: 'Geocaches erbij als speurtocht' },
+        { icon: 'child_care', label: 'Kindmodus: je kind wijst de weg' },
+      ],
+
+      km, kmLabel: km.toFixed(1).replace('.', ','),
+      tijdLabel: `± ${Math.floor(mins / 60)} u ${String(mins % 60).padStart(2, '0')} met stops`,
+      onKm: (e) => this.setState({ km: parseFloat(e.target.value) }),
+
+      rondjeLabel: st.rondje ? 'Rondje' : 'Heen & terug',
+      rondjeIcon: st.rondje ? 'refresh' : 'sync_alt',
+      rondjeStyle: `flex:1;display:flex;gap:11px;align-items:center;padding:15px;border-radius:22px;cursor:pointer;border:1px solid rgba(201,242,110,.3);background:rgba(201,242,110,.12);color:#EAF3EA;`,
+      toggleRondje: () => this.setState(s => ({ rondje: !s.rondje })),
+
+      ages: [3, 4, 6, 8, 10].map(a => ({
+        label: `${a}`, pick: () => this.setState({ age: a }),
+        style: `flex:1;height:64px;border-radius:20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;transition:all .18s cubic-bezier(.16,1,.3,1);` +
+          (st.age === a
+            ? `border:0;background:#C9F26E;color:#0C1A17;box-shadow:0 10px 26px rgba(201,242,110,.28);`
+            : `border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:rgba(234,243,234,.7);`),
+      })),
+
+      chips: [
+        ['speeltuin', 'Speeltuin', 'toys'], ['vlonderpad', 'Vlonderpad', 'stairs'],
+        ['water', 'Bruggen & water', 'water'], ['uitkijk', 'Uitkijktoren', 'landscape'],
+        ['rust', 'Pauzeplek', 'local_cafe'], ['dieren', 'Dierenweide', 'pets'],
+      ].map(([k, label, icon]) => {
+        const on = !!st.picked[k];
+        return {
+          label, icon,
+          toggle: () => this.setState(s => ({ picked: { ...s.picked, [k]: !s.picked[k] } })),
+          style: `display:flex;align-items:center;gap:8px;padding:11px 15px;border-radius:999px;cursor:pointer;font-family:'Gabarito',sans-serif;font-size:14.5px;font-weight:700;transition:all .18s cubic-bezier(.16,1,.3,1);` +
+            (on
+              ? `border:0;background:#C9F26E;color:#0C1A17;box-shadow:0 8px 22px rgba(201,242,110,.22);`
+              : `border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:rgba(234,243,234,.65);`),
+        };
+      }),
+
+      geocachesAan: cacheKaart,
+      cacheSub: st.cache ? '4 caches binnen dit rondje' : 'nu uitgeschakeld',
+      cacheStyle: `margin-top:18px;width:100%;display:flex;gap:14px;align-items:center;padding:16px;border-radius:26px;cursor:pointer;color:#EAF3EA;border:1px solid ${st.cache ? 'rgba(255,178,107,.35)' : 'rgba(255,255,255,.09)'};background:${st.cache ? 'rgba(255,178,107,.1)' : 'rgba(255,255,255,.04)'};`,
+      toggleCache: () => this.setState(s => ({ cache: !s.cache })),
+      switchTrack: `width:52px;height:31px;border-radius:999px;flex:none;padding:3px;box-sizing:border-box;display:flex;justify-content:${st.cache ? 'flex-end' : 'flex-start'};background:${st.cache ? '#FFB26B' : 'rgba(255,255,255,.16)'};transition:all .2s cubic-bezier(.16,1,.3,1);`,
+      switchKnob: `width:25px;height:25px;border-radius:999px;background:#0C1A17;`,
+
+      zoek: () => {
+        this.setState({ screen: 'zoeken' });
+        clearTimeout(this._t);
+        this._t = setTimeout(() => this.setState({ screen: 'resultaten' }), 1700);
+      },
+
+      filterLabel: `${km.toFixed(1).replace('.', ',')} km · ${st.age} jaar · vanaf je locatie`,
+
+      routes: [
+        { naam: 'Kikkerbrug-rondje', badge: 'Beste match', km: '4,5 km', tijd: '1 u 40', punten: '6 punten', omschrijving: 'Twee vlonderpaden, een houten brug over de sloot en halverwege een speeltuin met kabelbaan.', open: this.go('detail') },
+        { naam: 'Boswachterspad', badge: 'Veel schaduw', km: '3,8 km', tijd: '1 u 20', punten: '4 punten', omschrijving: 'Zacht bospad met een uitkijkhut en twee caches vlak naast het pad.', open: this.go('detail') },
+        { naam: 'Ommetje Molenven', badge: 'Kinderwagen', km: '5,2 km', tijd: '2 u', punten: '5 punten', omschrijving: 'Verhard rondje langs het ven, met een pontje en een pauzeplek met ijs.', open: this.go('detail') },
+      ].map((r, i) => ({
+        ...r,
+        cardStyle: `text-align:left;cursor:pointer;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:30px;padding:0;overflow:hidden;animation:riseIn .5s ${0.06 * i}s cubic-bezier(.16,1,.3,1) both;`,
+      })),
+
+      pois: [
+        { naam: 'Vlonderpad Kreekbos', meta: '240 m over het water', km: '0,8', icon: 'stairs' },
+        { naam: 'De kikkerbrug', meta: 'hier zitten altijd kikkers', km: '1,6', icon: 'water' },
+        { naam: 'Cache "Holle boompje"', meta: 'geocache · makkelijk te vinden', km: '2,1', icon: 'travel_explore' },
+        { naam: 'Speeltuin De Eekhoorn', meta: 'kabelbaan en zandbak', km: '2,9', icon: 'toys' },
+        { naam: 'Uitkijkhut Wildzicht', meta: 'verrekijker meenemen', km: '3,6', icon: 'landscape' },
+        { naam: 'Theeschenkerij Twickel', meta: 'limonade en taart', km: '4,2', icon: 'local_cafe' },
+      ],
+
+      savedRoutes: [
+        { naam: 'Rondje Hulscherveld', meta: '3,2 km · 2 caches · vorige zaterdag', icon: 'forest' },
+        { naam: 'Vlonderpad Kreekbos', meta: '2,4 km · kinderwagen · 3× gelopen', icon: 'stairs' },
+        { naam: 'Speeltuintocht Zuid', meta: '5,0 km · 3 speeltuinen', icon: 'toys' },
+      ],
+
+      kidHints: [
+        { icon: 'water', label: 'zoek water' },
+        { icon: 'photo_camera', label: 'maak foto' },
+        { icon: 'volume_up', label: 'voorlezen' },
+      ],
+
+      voortgang: [0, 1, 2, 3, 4, 5].map(i => ({
+        style: `width:13px;height:13px;border-radius:999px;background:${i < 3 ? '#0C1A17' : 'rgba(12,26,23,.2)'};`,
+      })),
+
+      codeVakjes: ['•', '•', '', ''].map((char, i) => ({
+        char,
+        style: `width:56px;height:68px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-family:'Gabarito',sans-serif;font-size:28px;font-weight:900;color:#EAF3EA;background:rgba(255,255,255,.05);border:2px solid ${i === 2 ? '#C9F26E' : 'rgba(255,255,255,.1)'};`,
+      })),
+
+      stickers: stickerIcons.map((icon, i) => {
+        const vol = stickersAan && i < 9;
+        return {
+          icon,
+          style: `aspect-ratio:1;border-radius:22px;display:flex;align-items:center;justify-content:center;` +
+            (vol
+              ? `background:#C9F26E;color:#0C1A17;box-shadow:0 8px 22px rgba(201,242,110,.2);`
+              : `background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.14);color:rgba(234,243,234,.18);`),
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>

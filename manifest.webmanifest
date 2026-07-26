@@ -1,0 +1,17 @@
+{
+  "name": "Stapper — wandelroutes voor kinderen",
+  "short_name": "Stapper",
+  "description": "Wandelroutes die kinderen zelf willen lopen. Rondjes vanaf waar je nu staat, langs speeltuinen, bruggetjes en pauzeplekken.",
+  "lang": "nl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0C1A17",
+  "theme_color": "#0C1A17",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

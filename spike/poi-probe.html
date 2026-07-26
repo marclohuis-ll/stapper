@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Stapper — POI-probe</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.css">
+<style>
+  body { margin: 0; font: 14px system-ui; background: #0C1A17; color: #EAF3EA; }
+  #map { width: 1400px; height: 1400px; }
+  #log { padding: 12px; font-family: ui-monospace, monospace; white-space: pre; }
+</style>
+</head>
+<body>
+<div id="log">laden…</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.js"></script>
+<script>
+/* ============================================================================
+   Meetopstelling voor beslissing 6b: komen er genoeg POI's uit de vectortiles
+   om er een routegenerator op te bouwen?
+
+   Werkwijze: spring over een raster van tegel-middens op z14, wacht per stap
+   tot de kaart idle is, en verzamel wat querySourceFeatures() teruggeeft.
+   Rondlopen over het raster in plaats van één viewport, want MapLibre laadt
+   alleen tegels voor het zichtbare canvas — één viewport dekt de zoekradius
+   niet betrouwbaar.
+   ============================================================================ */
+
+const SOURCE = 'openmaptiles';
+const Z = 14;                     // de poi-laag in het OpenMapTiles-schema begint hier
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [6.755, 52.247],
+  zoom: Z,
+  attributionControl: { compact: true },
+});
+
+const log = (m) => { document.getElementById('log').textContent = m; };
+
+const ready = new Promise((res) => map.once('idle', res));
+ready.then(() => log('kaart geladen — klaar voor probeArea()'));
+
+/* ── geo ──────────────────────────────────────────────────────────────────── */
+const R = 6371000;
+const rad = (d) => d * Math.PI / 180;
+function distM(a, b) {                       // [lon,lat] paren
+  const dLat = rad(b[1] - a[1]), dLon = rad(b[0] - a[0]);
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+function firstCoord(g) {
+  let c = g.coordinates;
+  while (Array.isArray(c[0])) c = c[0];
+  return c;
+}
+
+/* tegelrooster dat de schijf dekt */
+const lon2x = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
+const lat2y = (lat, z) => Math.floor(
+  (1 - Math.log(Math.tan(rad(lat)) + 1 / Math.cos(rad(lat))) / Math.PI) / 2 * 2 ** z
+);
+const x2lon = (x, z) => x / 2 ** z * 360 - 180;
+const y2lat = (y, z) => {
+  const n = Math.PI - 2 * Math.PI * y / 2 ** z;
+  return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+};
+
+const idle = () => new Promise((res) => map.once('idle', res));
+
+/* ── de meting ────────────────────────────────────────────────────────────── */
+window.probeArea = async function (lat, lon, radiusM, layers) {
+  layers = layers || ['poi', 'park', 'water', 'waterway', 'transportation', 'landuse'];
+
+  // Tegelbereik rond de schijf, met een tegel marge zodat randen meedoen.
+  const dLat = radiusM / 111320;
+  const dLon = radiusM / (111320 * Math.cos(rad(lat)));
+  const x0 = lon2x(lon - dLon, Z) - 1, x1 = lon2x(lon + dLon, Z) + 1;
+  const y0 = lat2y(lat + dLat, Z) - 1, y1 = lat2y(lat - dLat, Z) + 1;
+
+  const seen = new Map();   // dedup over tegelgrenzen heen
+  let steps = 0;
+  const total = (x1 - x0 + 1) * (y1 - y0 + 1);
+
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      const c = [(x2lon(x, Z) + x2lon(x + 1, Z)) / 2, (y2lat(y, Z) + y2lat(y + 1, Z)) / 2];
+      map.jumpTo({ center: c, zoom: Z });
+      await idle();
+      steps++;
+      log(`probe ${steps}/${total} tegels — ${seen.size} unieke features`);
+
+      for (const sourceLayer of layers) {
+        let feats = [];
+        try { feats = map.querySourceFeatures(SOURCE, { sourceLayer }); } catch (e) { continue; }
+        for (const f of feats) {
+          if (!f.geometry) continue;
+          const co = firstCoord(f.geometry);
+          if (distM([lon, lat], co) > radiusM) continue;
+          const p = f.properties || {};
+          const key = `${sourceLayer}|${f.id ?? ''}|${p.class ?? ''}|${p.subclass ?? ''}|` +
+                      `${co[0].toFixed(5)},${co[1].toFixed(5)}`;
+          if (!seen.has(key)) {
+            seen.set(key, { layer: sourceLayer, cls: p.class ?? null,
+                            sub: p.subclass ?? null, brunnel: p.brunnel ?? null,
+                            name: p.name ?? null, lon: co[0], lat: co[1] });
+          }
+        }
+      }
+    }
+  }
+
+  // aggregeren
+  const byLayer = {}, poiBySub = {}, poiByClass = {}, brunnel = {}, named = { poi: 0 };
+  for (const f of seen.values()) {
+    byLayer[f.layer] = (byLayer[f.layer] || 0) + 1;
+    if (f.layer === 'poi') {
+      const s = f.sub || '(geen)', c = f.cls || '(geen)';
+      poiBySub[s] = (poiBySub[s] || 0) + 1;
+      poiByClass[c] = (poiByClass[c] || 0) + 1;
+      if (f.name) named.poi++;
+    }
+    if (f.brunnel) {
+      const k = `${f.layer}/${f.cls}/${f.brunnel}`;
+      brunnel[k] = (brunnel[k] || 0) + 1;
+    }
+  }
+
+  const sortDesc = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]));
+  const result = {
+    center: [lat, lon], radiusM, zoom: Z, tilesVisited: total,
+    uniqueFeatures: seen.size,
+    byLayer: sortDesc(byLayer),
+    poiByClass: sortDesc(poiByClass),
+    poiBySubclass: sortDesc(poiBySub),
+    poiWithName: named.poi,
+    brunnel: sortDesc(brunnel),
+  };
+  log(JSON.stringify(result, null, 2));
+  window.__lastProbe = { result, features: [...seen.values()] };
+  return result;
+};
+
+window.probeSubclass = (sub) =>
+  (window.__lastProbe?.features || []).filter(f => f.sub === sub)
+    .map(f => ({ name: f.name, lat: +f.lat.toFixed(5), lon: +f.lon.toFixed(5) }));
+</script>
+</body>
+</html>

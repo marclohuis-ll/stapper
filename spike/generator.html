@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Stapper — generator-testbank</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.css">
+<style>
+  :root { --lime:#C9F26E; --ink:#0C1A17; --text:#EAF3EA; }
+  * { box-sizing: border-box; }
+  body { margin:0; display:flex; height:100vh; font:14px system-ui; background:var(--ink); color:var(--text); }
+  #side { width:400px; flex:none; overflow-y:auto; padding:16px; border-right:1px solid rgba(255,255,255,.12); }
+  #map { flex:1; }
+  h1 { font-size:16px; margin:0 0 14px; }
+  label { display:block; margin:10px 0 4px; font-size:12px; color:rgba(234,243,234,.7); }
+  input[type=text], input[type=number] { width:100%; padding:7px; border-radius:8px;
+    border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:var(--text); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .chips label { display:inline-flex; align-items:center; gap:5px; margin:0; padding:6px 10px;
+    border-radius:999px; border:1px solid rgba(255,255,255,.16); cursor:pointer; font-size:12.5px; color:var(--text); }
+  .chips input { margin:0; }
+  button { margin-top:14px; width:100%; padding:11px; border:0; border-radius:999px;
+    background:var(--lime); color:var(--ink); font-weight:700; font-size:15px; cursor:pointer; }
+  button[disabled] { opacity:.5; cursor:default; }
+  #status { margin-top:12px; font-size:12.5px; color:var(--lime); min-height:1.4em; }
+  .card { margin-top:12px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.04); cursor:pointer; }
+  .card.on { border-color:var(--lime); }
+  .card h2 { font-size:15px; margin:0 0 2px; }
+  .card .meta { font-size:12px; color:rgba(234,243,234,.66); }
+  .card ul { margin:8px 0 0; padding-left:18px; font-size:12px; color:rgba(234,243,234,.8); }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; }
+  pre { font-size:11px; white-space:pre-wrap; color:rgba(234,243,234,.55); }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>Generator-testbank</h1>
+
+  <label>Startpunt (lat, lon)</label>
+  <input id="centre" type="text" value="52.247, 6.755">
+
+  <label>Doelafstand: <b id="kmOut">4,5</b> km</label>
+  <input id="km" type="range" min="1" max="12" step="0.5" value="4.5" style="width:100%">
+
+  <label>Vorm</label>
+  <div class="chips">
+    <label><input type="radio" name="shape" value="loop" checked>Rondje</label>
+    <label><input type="radio" name="shape" value="outback">Heen &amp; terug</label>
+  </div>
+
+  <label>Onderweg moet er zijn</label>
+  <div class="chips" id="chips"></div>
+
+  <button id="go">Zoek paadjes</button>
+  <div id="status"></div>
+  <div id="results"></div>
+  <pre id="timing"></pre>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.js"></script>
+<script type="module">
+import { CATEGORIES } from '../src/pois.js';
+import { createHarvester, supplementFromOverpass } from '../src/pois.js';
+import { generateRoutes, GenerateError } from '../src/generator.js';
+import { darkStyle } from '../src/map-style.js';
+
+const STYLE = darkStyle();
+const COLOURS = ['#C9F26E', '#FFB26B', '#6FE3D0'];
+
+const map = new maplibregl.Map({
+  container: 'map', style: STYLE, center: [6.755, 52.247], zoom: 13,
+});
+let harvester = null;
+
+/* chips */
+const chipBox = document.getElementById('chips');
+const DEFAULT_ON = ['speeltuin', 'brug', 'pauze'];
+for (const c of CATEGORIES) {
+  const id = `chip-${c.key}`;
+  const el = document.createElement('label');
+  el.innerHTML = `<input type="checkbox" id="${id}" value="${c.key}" ` +
+                 `${DEFAULT_ON.includes(c.key) ? 'checked' : ''}>${c.label}` +
+                 `${c.from === 'overpass' ? ' *' : ''}`;
+  chipBox.appendChild(el);
+}
+
+const km = document.getElementById('km');
+km.oninput = () => document.getElementById('kmOut').textContent =
+  Number(km.value).toFixed(1).replace('.', ',');
+
+const status = (m) => document.getElementById('status').textContent = m;
+
+/* ── genereren ───────────────────────────────────────────────────────────── */
+document.getElementById('go').onclick = async () => {
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('timing').textContent = '';
+  clearRoutes();
+
+  const [lat, lon] = document.getElementById('centre').value.split(',').map(Number);
+  const chips = [...chipBox.querySelectorAll('input:checked')].map((i) => i.value);
+  const t0 = performance.now();
+
+  try {
+    if (!harvester) { status('oogster starten…'); harvester = createHarvester(maplibregl); }
+
+    const out = await generateRoutes({
+      lat, lon, targetKm: Number(km.value), chips, harvester,
+      shape: document.querySelector('input[name=shape]:checked').value,
+      supplement: supplementFromOverpass,
+      onProgress: (step, detail) => status(`${step}: ${detail}`),
+    });
+
+    const ms = Math.round(performance.now() - t0);
+    status(`${out.routes.length} routes — ${out.poiCount} punten geoogst`);
+    document.getElementById('timing').textContent =
+      `${ms} ms totaal\n` +
+      (out.missing.length ? `Overpass mislukt voor: ${out.missing.join(', ')}\n` : '') +
+      (out.offTarget ? `LET OP: geen route binnen 45% van het doel\n` : '') +
+      out.attempts.map((a) => `  poging ${a.i}: ${a.reason}` +
+        (a.km ? ` — ${a.km} km, ${a.stops} stops, ring ${a.ringM} m, ${a.cats}` : '')).join('\n') + '\n' +
+      out.routes.map((r) =>
+        `${r.naam}\n  ${r.km}  afwijking ${(r.error * 100).toFixed(1)}%  ` +
+        `loop ${Math.round(r.walkTimeS / 60)} min → met kind ${r.tijd}`).join('\n');
+
+    out.routes.forEach((r, i) => drawRoute(r, i));
+    renderCards(out.routes);
+    fitTo(out.routes);
+  } catch (e) {
+    status(e instanceof GenerateError ? e.message : `fout: ${e.message}`);
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+/* ── tekenen ─────────────────────────────────────────────────────────────── */
+let drawn = [];
+
+function drawRoute(r, i) {
+  const id = `route-${i}`;
+  map.addSource(id, { type: 'geojson', data: {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords }, properties: {} },
+      ...r.pois.map((p, n) => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: p.coord },
+        properties: { label: `${n + 1}. ${p.naam}` },
+      })),
+    ],
+  }});
+  map.addLayer({ id: `${id}-line`, type: 'line', source: id,
+    filter: ['==', ['geometry-type'], 'LineString'],
+    paint: { 'line-color': COLOURS[i % 3], 'line-width': 5, 'line-opacity': .85 } });
+  map.addLayer({ id: `${id}-dot`, type: 'circle', source: id,
+    filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-radius': 7, 'circle-color': COLOURS[i % 3],
+             'circle-stroke-width': 2.5, 'circle-stroke-color': '#0C1A17' } });
+  map.addLayer({ id: `${id}-label`, type: 'symbol', source: id,
+    filter: ['==', ['geometry-type'], 'Point'],
+    layout: { 'text-field': ['get', 'label'], 'text-size': 11, 'text-offset': [0, 1.4],
+              'text-anchor': 'top' },
+    paint: { 'text-color': '#fff', 'text-halo-color': '#0C1A17', 'text-halo-width': 2 } });
+  drawn.push(id);
+}
+
+function clearRoutes() {
+  for (const id of drawn) {
+    for (const suffix of ['-line', '-dot', '-label']) {
+      if (map.getLayer(id + suffix)) map.removeLayer(id + suffix);
+    }
+    if (map.getSource(id)) map.removeSource(id);
+  }
+  drawn = [];
+}
+
+function fitTo(routes) {
+  const b = new maplibregl.LngLatBounds();
+  for (const r of routes) for (const c of r.coords) b.extend(c);
+  map.fitBounds(b, { padding: 60, duration: 600 });
+}
+
+function renderCards(routes) {
+  const host = document.getElementById('results');
+  routes.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML =
+      `<h2><span class="swatch" style="background:${COLOURS[i % 3]}"></span>${r.naam}</h2>` +
+      `<div class="meta">${r.badge} · ${r.km} · ${r.tijd} · ${r.punten}</div>` +
+      `<div class="meta">${r.omschrijving}</div>` +
+      `<ul>${r.pois.map((p) => `<li>${p.naam} — ${p.meta}</li>`).join('')}</ul>`;
+    el.onclick = () => {
+      [...host.children].forEach((c) => c.classList.remove('on'));
+      el.classList.add('on');
+      const b = new maplibregl.LngLatBounds();
+      for (const c of r.coords) b.extend(c);
+      map.fitBounds(b, { padding: 60 });
+    };
+    host.appendChild(el);
+  });
+}
+
+window.__map = map;
+</script>
+</body>
+</html>
