@@ -12,7 +12,11 @@
 
 import { CATEGORIES, createHarvester, supplementFromOverpass } from './src/pois.js';
 import { generateRoutes, GenerateError } from './src/generator.js';
-import { getPosition, LocationError, INSECURE } from './src/geolocate.js';
+import { getPosition, watchPosition, LocationError, INSECURE } from './src/geolocate.js';
+import { createTracker } from './src/tracking.js';
+import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
+import { bearing } from './src/geo.js';
+import { simulateWalk, simulationSetting } from './src/simulate.js';
 import * as mapview from './src/mapview.js';
 
 /* ── Feature flags ───────────────────────────────────────────────────────── */
@@ -42,11 +46,10 @@ const STICKER_ICONS = [
   'water_drop', 'park', 'nightlight', 'cake', 'star', 'diamond',
 ];
 
-/* Demo-waarden voor de twee schermen die nog niet op live tracking zitten. */
-const WALK = {
-  percent: 42, etaMin: 55, volgendAfstand: '320 m',
-  kindAfstand: 80, punten: 6, gevonden: 3,
-  sticker: { icon: 'emoji_nature', titel: 'kikker<br>gevonden!' },
+/* Stickers zijn per soort punt; die van het gevonden punt wordt uitgereikt. */
+const STICKER_FOR = {
+  speeltuin: 'toys', brug: 'water_drop', pauze: 'cake', sportveld: 'sports_soccer',
+  knooppunt: 'signpost', schuilhut: 'cabin', picknick: 'emoji_nature', uitkijk: 'landscape',
 };
 
 const SCREENS = ['welkom','home','instellen','zoeken','resultaten','detail','onderweg','kind','profiel'];
@@ -75,6 +78,24 @@ const state = {
   code: '',
   showSticker: false,
   showLock: false,
+};
+
+/* ── De wandeling ────────────────────────────────────────────────────────
+   Apart van `state`, want dit verandert elke seconde en mag dus géén
+   volledige hertekening uitlokken: dat zou de kaart laten flikkeren en de
+   compasnaald laten haperen. Deze waarden worden ter plekke in de DOM gezet.
+   ───────────────────────────────────────────────────────────────────────── */
+const walk = {
+  tracker: null,
+  progress: null,
+  heading: null,
+  sticker: null,      // het punt waarvoor net een sticker is uitgereikt
+  nudge: '',          // "nog 120 meter!"
+  nudgeTimer: null,
+  override: false,    // ontsnappingsluik zichtbaar na een mislukte poging
+  stopWatch: null,
+  stopCompass: null,
+  follow: true,
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
@@ -423,51 +444,48 @@ views.detail = () => {
 
 views.onderweg = () => {
   const r = currentRoute();
-  const totaal = r ? r.km : '4,5 km';
-  const volgend = r && r.pois[0] ? r.pois[0] : { naam: 'het eerste punt', icon: 'water' };
-  const gelopen = r ? komma(r.distanceM / 1000 * WALK.percent / 100) : '1,9';
+  if (!r) return views.resultaten();
+
+  const pr = walk.progress;
+  const volgend = pr && pr.next ? pr.next : r.pois[0];
 
   return `
   <div class="screen">
     <div class="onderweg">
-      <svg class="onderweg__svg" viewBox="0 0 396 760" aria-hidden="true">
-        <path d="M72 640 C 132 560, 92 448, 172 396 S 302 356, 302 232 S 332 128, 344 74"
-              fill="none" stroke="rgba(234,243,234,.18)" stroke-width="4"
-              stroke-linecap="round" stroke-dasharray="2 11"></path>
-        <path d="M72 640 C 132 560, 92 448, 172 396"
-              fill="none" stroke="#C9F26E" stroke-width="5" stroke-linecap="round"></path>
-        <circle class="onderweg__pos-glow" cx="172" cy="396" r="22" fill="rgba(201,242,110,.3)"></circle>
-        <circle cx="172" cy="396" r="12" fill="#C9F26E" stroke="#0C1A17" stroke-width="3"></circle>
-      </svg>
+      <div class="onderweg__map" id="onderweg-map"></div>
 
       <div class="onderweg__hud">
         <button class="onderweg__close" data-go="detail" aria-label="Wandeling afsluiten">${ico('close')}</button>
         <div class="progress">
           <div class="progress__row">
-            <span>${gelopen} van ${esc(totaal)}</span>
-            <span class="progress__eta">nog ± ${WALK.etaMin} min</span>
+            <span data-walked>${pr ? komma(pr.walkedM / 1000) : '0,0'} van ${esc(r.km)}</span>
+            <span class="progress__eta" data-eta>${etaLabel(r, pr)}</span>
           </div>
-          <div class="progress__track" role="progressbar" aria-valuenow="${WALK.percent}"
+          <div class="progress__track" role="progressbar" data-bar
+               aria-valuenow="${pr ? pr.percent : 0}"
                aria-valuemin="0" aria-valuemax="100" aria-label="Voortgang wandeling">
-            <div class="progress__fill" style="width:${WALK.percent}%"></div>
+            <div class="progress__fill" data-fill style="width:${pr ? pr.percent : 0}%"></div>
           </div>
         </div>
       </div>
 
       <div class="nextcard-wrap">
         <div class="nextcard">
+          ${pr && pr.offRouteM > 60 ? `
+            <div class="nextcard__alert">${ico('warning')}
+              <span data-off>Je bent ${Math.round(pr.offRouteM)} m van de route</span></div>` : ''}
           <div class="nextcard__top">
-            <div class="nextcard__ico">${ico(volgend.icon)}</div>
+            <div class="nextcard__ico" data-next-ico>${ico(volgend ? volgend.icon : 'flag')}</div>
             <div>
-              <div class="nextcard__k">Volgende punt · ${WALK.volgendAfstand}</div>
-              <div class="nextcard__v">${esc(volgend.naam)}</div>
+              <div class="nextcard__k" data-next-meta>${nextMeta(pr)}</div>
+              <div class="nextcard__v" data-next-name>${esc(volgend ? volgend.naam : 'Terug bij het begin')}</div>
             </div>
           </div>
           <div class="nextcard__actions">
             <button class="btn-ghost" data-act="pauze" aria-pressed="${state.pauze}">
               ${state.pauze ? 'Doorlopen' : 'Pauze'}
             </button>
-            <button class="btn-kid" data-go="kind">
+            <button class="btn-kid" data-act="to-kind">
               ${ico('child_care')}Kind wijst de weg
             </button>
           </div>
@@ -477,11 +495,30 @@ views.onderweg = () => {
   </div>`;
 };
 
+/** Resterende tijd uit de echte gelopen afstand en het kindtempo van de route. */
+function etaLabel(route, pr) {
+  if (!pr) return `± ${route.tijd}`;
+  const share = route.distanceM ? pr.remainingM / route.distanceM : 1;
+  const mins = Math.round(route.kidTimeS * share / 60);
+  return mins <= 1 ? 'bijna klaar' : `nog ± ${mins} min`;
+}
+
+const nextMeta = (pr) => {
+  if (!pr) return 'Volgende punt';
+  if (!pr.next) return `Alle ${pr.reachedCount} punten gehad`;
+  const d = Math.round(pr.nextDistanceM);
+  return `Volgende punt · ${d >= 1000 ? komma(d / 1000) + ' km' : d + ' m'}`;
+};
+
 views.kind = () => {
   const r = currentRoute();
-  const doel = r && r.pois[0] ? r.pois[0].naam.toLowerCase() : 'het volgende punt';
-  const dots = Array.from({ length: WALK.punten }, (_, i) =>
-    `<span class="kind__dot ${i < WALK.gevonden ? 'kind__dot--on' : ''}"></span>`).join('');
+  if (!r) return views.resultaten();
+
+  const pr = walk.progress;
+  const totaal = walk.tracker ? walk.tracker.pois.length : r.pois.length;
+  const gevonden = pr ? pr.reachedCount : 0;
+  const dots = Array.from({ length: totaal }, (_, i) =>
+    `<span class="kind__dot ${i < gevonden ? 'kind__dot--on' : ''}"></span>`).join('');
 
   return `
   <div class="screen">
@@ -489,8 +526,8 @@ views.kind = () => {
       <div class="sheet kind">
         <div class="kind__blob"></div>
         <div class="kind__top">
-          <div class="kind__dots" aria-label="${WALK.gevonden} van ${WALK.punten} punten gevonden">
-            ${dots}<span class="kind__count">${WALK.gevonden}/${WALK.punten}</span>
+          <div class="kind__dots" aria-label="${gevonden} van ${totaal} punten gevonden">
+            ${dots}<span class="kind__count" data-kind-count>${gevonden}/${totaal}</span>
           </div>
           <button class="kind__lock" data-act="open-lock">
             ${ico('lock')}<span class="kind__lock-label">papa</span>
@@ -498,9 +535,13 @@ views.kind = () => {
         </div>
 
         <div class="kind__main">
-          <div class="kind__compass">${ico('navigation', 'kind__needle')}</div>
-          <div class="kind__dist">${WALK.kindAfstand}<small> m</small></div>
-          <div class="kind__goal">op naar ${esc(doel)}!</div>
+          <div class="kind__compass">
+            <span class="kind__needle-rot" data-needle
+                  style="transform:rotate(${needleDeg()}deg)">${ico('navigation', 'kind__needle')}</span>
+          </div>
+          <div class="kind__dist" data-kind-dist>${kindDistance()}</div>
+          <div class="kind__goal" data-kind-goal>${esc(kindGoal(pr))}</div>
+          <div class="kind__nudge" data-nudge>${esc(walk.nudge)}</div>
         </div>
 
         <div class="kind__hints">
@@ -509,6 +550,8 @@ views.kind = () => {
         </div>
 
         <button class="kind__cta" data-act="open-sticker">${ico('visibility')}ik zie het!</button>
+        ${walk.override ? `
+          <button class="kind__override" data-act="force-sticker">toch gevonden</button>` : ''}
       </div>
     </div>
 
@@ -517,16 +560,48 @@ views.kind = () => {
   </div>`;
 };
 
-const stickerOverlay = () => `
+function kindDistance() {
+  const pr = walk.progress;
+  if (!pr || pr.nextDistanceM == null) return `<small>klaar!</small>`;
+  const d = Math.round(pr.nextDistanceM);
+  return d >= 1000
+    ? `${komma(d / 1000)}<small> km</small>`
+    : `${d}<small> m</small>`;
+}
+
+const kindGoal = (pr) => {
+  if (!pr) return 'even wachten op de satellieten…';
+  if (!pr.next) return 'alles gevonden!';
+  return `op naar ${pr.next.naam.toLowerCase()}!`;
+};
+
+/** Naald wijst naar het volgende punt, gecorrigeerd voor de richting waarin de
+ *  telefoon wijst. Zonder kompas houden we noord boven — beter dan niets. */
+function needleDeg() {
+  const pr = walk.progress;
+  if (!pr || !pr.next || !state.position) return 0;
+  const to = bearing([state.position.lon, state.position.lat], pr.next.coord);
+  return Math.round(needleRotation(to, walk.heading));
+}
+
+const stickerOverlay = () => {
+  const found = walk.sticker;
+  const totaal = walk.tracker ? walk.tracker.pois.length : 0;
+  const nummer = walk.progress ? walk.progress.reachedCount : 1;
+  const icon = found ? (STICKER_FOR[found.category] || found.icon) : 'emoji_nature';
+  const naam = found ? found.naam.toLowerCase() : 'iets moois';
+
+  return `
   <div class="overlay overlay--sticker" role="dialog" aria-modal="true" aria-label="Sticker gevonden">
     <div class="sticker__badge">
       <div class="sticker__glow"></div>
-      <div class="sticker__disc">${ico(WALK.sticker.icon)}</div>
+      <div class="sticker__disc">${ico(icon)}</div>
     </div>
-    <div class="sticker__title">${WALK.sticker.titel}</div>
-    <div class="sticker__sub">sticker ${WALK.gevonden + 1} van ${WALK.punten} · in je boek geplakt</div>
+    <div class="sticker__title">${esc(naam)}<br>gevonden!</div>
+    <div class="sticker__sub">sticker ${nummer} van ${totaal} · in je boek geplakt</div>
     <button class="btn-kid-cta" data-act="close-sticker">verder lopen</button>
   </div>`;
+};
 
 const lockOverlay = () => `
   <div class="overlay overlay--lock" role="dialog" aria-modal="true" aria-label="Kindmodus verlaten">
@@ -602,12 +677,135 @@ function render() {
 
 /** De kaart verhuist naar het scherm dat hem nodig heeft. */
 async function mountMap() {
-  if (state.screen !== 'detail') return;
-  const host = document.getElementById('detail-map');
+  const hostId = state.screen === 'detail' ? 'detail-map'
+               : state.screen === 'onderweg' ? 'onderweg-map' : null;
+  if (!hostId) return;
+  const host = document.getElementById(hostId);
   const route = currentRoute();
   if (!host || !route) return;
   await mapview.attach(window.maplibregl, host);
   mapview.render({ route, position: state.position, padding: 46 });
+  if (state.screen === 'onderweg' && state.position) mapview.centreOn(state.position, 16);
+}
+
+/* ── Live tracking ────────────────────────────────────────────────────────
+   Loopt zolang je op *onderweg* of in de *kindmodus* bent; tussen die twee
+   schermen wisselen laat de wandeling doorlopen.
+   ───────────────────────────────────────────────────────────────────────── */
+function startWalk() {
+  const route = currentRoute();
+  if (!route || walk.tracker) return;
+
+  walk.tracker = createTracker(route);
+  walk.progress = null;
+  walk.override = false;
+  walk.follow = true;
+
+  const onMove = (p) => {
+    state.position = p;
+    walk.progress = walk.tracker.update(p);
+    paintWalk();
+  };
+
+  const sim = simulationSetting();
+  walk.stopWatch = sim
+    ? simulateWalk(route, onMove, sim)
+    : watchPosition(onMove, (e) => showNudge(e.message));
+
+  walk.stopCompass = startCompass((h) => { walk.heading = h; paintNeedle(); });
+}
+
+function stopWalk() {
+  if (walk.stopWatch) walk.stopWatch();
+  if (walk.stopCompass) walk.stopCompass();
+  clearTimeout(walk.nudgeTimer);
+  Object.assign(walk, {
+    tracker: null, progress: null, heading: null, sticker: null,
+    nudge: '', override: false, stopWatch: null, stopCompass: null,
+  });
+}
+
+const paintText = (sel, text) => {
+  const el = app.querySelector(sel);
+  if (el) el.textContent = text;
+};
+
+/** Waarden bijwerken zonder hertekenen: een re-render per GPS-tik zou de kaart
+ *  laten flikkeren en de naald laten haperen. */
+function paintWalk() {
+  const pr = walk.progress;
+  const r = currentRoute();
+  if (!pr || !r) return;
+
+  if (state.screen === 'onderweg') {
+    paintText('[data-walked]', `${komma(pr.walkedM / 1000)} van ${r.km}`);
+    paintText('[data-eta]', etaLabel(r, pr));
+    paintText('[data-next-meta]', nextMeta(pr));
+    paintText('[data-next-name]', pr.next ? pr.next.naam : 'Terug bij het begin');
+
+    const fill = app.querySelector('[data-fill]');
+    if (fill) fill.style.width = `${pr.percent}%`;
+    const bar = app.querySelector('[data-bar]');
+    if (bar) bar.setAttribute('aria-valuenow', String(pr.percent));
+    const icon = app.querySelector('[data-next-ico] .ms');
+    if (icon && pr.next) icon.textContent = pr.next.icon;
+
+    mapview.render({ route: r, position: state.position, fit: false });
+    if (walk.follow) mapview.centreOn(state.position, 16);
+  }
+
+  if (state.screen === 'kind') {
+    const dist = app.querySelector('[data-kind-dist]');
+    if (dist) dist.innerHTML = kindDistance();
+    paintText('[data-kind-goal]', kindGoal(pr));
+    paintText('[data-kind-count]', `${pr.reachedCount}/${walk.tracker.pois.length}`);
+    app.querySelectorAll('.kind__dot').forEach((d, i) =>
+      d.classList.toggle('kind__dot--on', i < pr.reachedCount));
+    paintNeedle();
+  }
+}
+
+function paintNeedle() {
+  const el = app.querySelector('[data-needle]');
+  if (el) el.style.transform = `rotate(${needleDeg()}deg)`;
+}
+
+/** "ik zie het!" — de nabijheids-gate. */
+function claimSticker({ force = false } = {}) {
+  if (!CONFIG.stickerBeloningen) return;
+  const pr = walk.progress;
+
+  if (!pr || !pr.next) {
+    showNudge(pr ? 'je hebt alles al gevonden!' : 'nog even wachten op de satellieten…');
+    return;
+  }
+
+  const near = pr.nextDistanceM <= pr.threshold;
+  if (!near && !force) {
+    // De app mag het nooit onterecht tegenhouden: na een mislukte poging komt er
+    // een "toch gevonden" onder de knop te staan.
+    showNudge(`nog ${Math.round(pr.nextDistanceM)} meter!`);
+    if (!walk.override) { walk.override = true; render(); }
+    return;
+  }
+
+  walk.sticker = pr.next;
+  walk.tracker.markReached(pr.next.index);
+  walk.progress = walk.tracker.update(state.position);
+  walk.override = false;
+  walk.nudge = '';
+  state.showSticker = true;
+  render();
+}
+
+function showNudge(text) {
+  walk.nudge = text;
+  paintText('[data-nudge]', text);
+  clearTimeout(walk.nudgeTimer);
+  walk.nudgeTimer = setTimeout(() => {
+    walk.nudge = '';
+    paintText('[data-nudge]', '');
+  }, 3000);
 }
 
 function focusCode() {
@@ -637,6 +835,13 @@ function enter(screen) {
   state.showSticker = false;
   state.showLock = false;
   state.code = '';
+
+  // Tracking loopt over *onderweg* en *kindmodus* heen: tussen die twee wisselen
+  // mag de wandeling niet opnieuw beginnen.
+  const walking = screen === 'onderweg' || screen === 'kind';
+  if (walking && !walk.tracker) startWalk();
+  if (!walking && walk.tracker) stopWalk();
+
   render();
 
   // De locatie is de voorwaarde voor alles; vraag hem zodra we hem nodig hebben.
@@ -765,10 +970,15 @@ app.addEventListener('click', (e) => {
 
     case 'pauze': state.pauze = !state.pauze; render(); break;
 
-    case 'open-sticker':
-      if (!CONFIG.stickerBeloningen) break;
-      state.showSticker = true; render(); break;
-    case 'close-sticker': state.showSticker = false; render(); break;
+    /* Kompaspermissie vragen vóórdat je het toestel overhandigt — op iOS moet dat
+       uit een gebruikersactie komen, en een zesjarige moet geen dialoog wegklikken. */
+    case 'to-kind':
+      requestCompassPermission().finally(() => go('kind'));
+      break;
+
+    case 'open-sticker':  claimSticker(); break;
+    case 'force-sticker': claimSticker({ force: true }); break;
+    case 'close-sticker': state.showSticker = false; walk.sticker = null; render(); break;
 
     case 'open-lock':  state.showLock = true;  state.code = ''; render(); break;
     case 'close-lock': state.showLock = false; state.code = ''; render(); break;
@@ -817,9 +1027,25 @@ const initial = fromHash();
 if (initial) { enter(initial); } else { location.replace('#/welkom'); enter('welkom'); }
 
 /* ── Service worker ─────────────────────────────────────────────────────── */
-// Relatief pad, want op GitHub Pages staat de app in een submap.
+/* Niet op localhost, tenzij je hem expliciet wil testen met ?sw.
+ *
+ * De cache serveert bij voorkeur de oude versie en vernieuwt op de achtergrond.
+ * Dat is precies goed op de telefoon en precies verkeerd tijdens ontwikkelen:
+ * je bewerkt een bestand, herlaadt, en kijkt naar de vorige versie. Dat heeft
+ * hier een half uur gekost, dus lokaal ruimen we hem juist actief op. */
+const DEV_HOST = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const WANT_SW = new URLSearchParams(location.search).has('sw');
+
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('sw:', e.message));
-  });
+  if (DEV_HOST && !WANT_SW) {
+    navigator.serviceWorker.getRegistrations()
+      .then((rs) => Promise.all(rs.map((r) => r.unregister())))
+      .then(() => caches.keys())
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .catch(() => {});
+  } else {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('sw:', e.message));
+    });
+  }
 }

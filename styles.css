@@ -557,8 +557,14 @@ button { font-family: inherit; color: inherit; }
     radial-gradient(150px 110px at 62% 90%, rgba(111,227,208,.38), transparent 70%),
     var(--bg-map);
 }
-.onderweg__svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.onderweg__pos-glow { animation: glowPulse 2.4s ease-in-out infinite; transform-origin: 172px 396px; }
+.onderweg__map { position: absolute; inset: 0; }
+.nextcard__alert {
+  display: flex; gap: 9px; align-items: center; margin-bottom: 12px;
+  padding: 9px 12px; border-radius: 14px;
+  background: rgba(255,178,107,.14); color: var(--orange);
+  font-size: 12.5px; font-weight: 600;
+}
+.nextcard__alert .ms { font-size: 17px; }
 .onderweg__hud {
   position: relative; padding: calc(16px + env(safe-area-inset-top)) 16px 0;
   display: flex; gap: 12px;
@@ -656,9 +662,16 @@ button { font-family: inherit; color: inherit; }
   content: ''; position: absolute; inset: 16px; border-radius: 999px;
   border: 4px dashed rgba(12,26,23,.16); animation: spinSlow 30s linear infinite;
 }
+/* Twee lagen: de buitenste draait naar het doel (via JS), de binnenste zweeft.
+   In één element gaan ze niet samen — animation en transform vechten dan om
+   dezelfde eigenschap en de animatie wint altijd. */
+.kind__needle-rot {
+  display: block; position: relative;
+  transition: transform .35s cubic-bezier(.22, 1, .36, 1);
+}
 .kind__needle {
   position: relative; font-size: 186px; color: var(--ink);
-  transform: rotate(26deg); animation: floatTilt 2.8s ease-in-out infinite;
+  animation: float 2.8s ease-in-out infinite;
 }
 .kind__dist {
   font-family: var(--f-kid); font-weight: 700; font-size: 104px;
@@ -669,6 +682,20 @@ button { font-family: inherit; color: inherit; }
   font-family: var(--f-kid); font-weight: 600; font-size: 26px;
   opacity: .75; margin-top: 8px; text-align: center;
 }
+/* Feedback als "ik zie het!" te vroeg komt. Vaste hoogte, zodat de layout niet
+   opspringt als de regel verschijnt. */
+.kind__nudge {
+  font-family: var(--f-kid); font-weight: 600; font-size: 19px;
+  min-height: 1.4em; margin-top: 6px; text-align: center; color: var(--ink);
+  opacity: .8;
+}
+.kind__override {
+  position: relative; margin-top: 8px; width: 100%; height: 44px;
+  border: 0; background: transparent; cursor: pointer; color: var(--ink);
+  font-family: var(--f-kid); font-weight: 500; font-size: 15px;
+  text-decoration: underline; text-underline-offset: 3px; opacity: .65;
+}
+
 .kind__hints { position: relative; display: flex; gap: 12px; }
 .hint {
   flex: 1; background: rgba(255,255,255,.55); border-radius: 26px; padding: 16px 8px;
@@ -844,8 +871,6 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
                        50%      { opacity: .9;  transform: scale(1.08); } }
 @keyframes float     { 0%, 100% { transform: translateY(0); }
                        50%      { transform: translateY(-9px); } }
-@keyframes floatTilt { 0%, 100% { transform: rotate(26deg) translateY(0); }
-                       50%      { transform: rotate(26deg) translateY(-9px); } }
 @keyframes spinSlow  { to { transform: rotate(360deg); } }
 @keyframes crawl     { to { stroke-dashoffset: -40; } }
 @keyframes popIn     { 0%   { transform: scale(.6);  opacity: 0; }
@@ -860,5 +885,4 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
   }
-  .kind__needle { transform: rotate(26deg); }
 }
