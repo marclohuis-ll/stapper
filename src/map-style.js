@@ -26,9 +26,21 @@ const C = {
   text:      '#EAF3EA',
   textHalo:  '#0A1512',
   textDim:   'rgba(234,243,234,.62)',
+  poi:       '#6FE3D0',   // mint: onderscheidt punten van de lime routelijn
 };
 
 const TILES = 'https://tiles.openfreemap.org/planet';
+
+/* Wat er van de poi-laag op de kaart mag. De laag zelf is vooral ruis — gemeten
+ * in een schijf van 3 km: 174 parkeerplaatsen, 167 hekken, 146 bollards en 101
+ * afvalbakken. Dus omgekeerd werken: alleen tonen wat je onderweg wíl zien. */
+const POI_KLASSEN = [
+  'playground', 'pitch', 'park', 'garden', 'shelter', 'information',
+  'cafe', 'restaurant', 'fast_food', 'bakery', 'bar', 'ice_cream',
+  'attraction', 'monument', 'castle', 'museum', 'artwork', 'viewpoint',
+  'picnic_site', 'zoo', 'water', 'swimming_area', 'campsite', 'dog_park',
+];
+const POI_FILTER = ['in', ['get', 'class'], ['literal', POI_KLASSEN]];
 
 export function darkStyle() {
   return {
@@ -127,6 +139,58 @@ export function darkStyle() {
           'line-opacity': .85,
           'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.8, 17, 3.4],
           'line-dasharray': [3, 1.6],
+        },
+      },
+
+      /* ── straatnamen ────────────────────────────────────────────────────
+         Langs de lijn geplaatst, want dan hoort de naam bij de weg in plaats
+         van ergens los te zweven. Vanaf z14, anders wordt het een tapijt. */
+      {
+        id: 'straatnaam', type: 'symbol', source: 'openmaptiles',
+        'source-layer': 'transportation_name', minzoom: 14,
+        layout: {
+          'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 14, 10.5, 17, 13],
+          'symbol-placement': 'line', 'text-anchor': 'center',
+          'text-max-angle': 40, 'symbol-spacing': 320, 'text-padding': 4,
+        },
+        paint: {
+          // Stevig genoeg om buiten in de zon te lezen; een flets label is
+          // hetzelfde als geen label.
+          'text-color': 'rgba(234,243,234,.82)',
+          'text-halo-color': C.textHalo, 'text-halo-width': 1.8,
+        },
+      },
+
+      /* ── punten onderweg ────────────────────────────────────────────────
+         Geen sprite beschikbaar, dus een stip plus de naam. De ruis uit de
+         poi-laag — parkeerplaatsen, hekken, bollards, afvalbakken — is er
+         uitgefilterd; die stonden er met 174, 167 en 146 stuks in en maken de
+         kaart onleesbaar. */
+      {
+        id: 'poi-stip', type: 'circle', source: 'openmaptiles',
+        'source-layer': 'poi', minzoom: 14,
+        filter: POI_FILTER,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2.2, 17, 4],
+          'circle-color': C.poi,
+          'circle-stroke-color': C.bg, 'circle-stroke-width': 1,
+        },
+      },
+      {
+        id: 'poi-naam', type: 'symbol', source: 'openmaptiles',
+        'source-layer': 'poi', minzoom: 15,
+        filter: POI_FILTER,
+        layout: {
+          'text-field': ['coalesce', ['get', 'name'], ''],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 15, 10, 17, 12],
+          'text-offset': [0, 0.9], 'text-anchor': 'top',
+          'text-max-width': 8, 'text-optional': true,
+        },
+        paint: {
+          'text-color': C.poi,
+          'text-halo-color': C.textHalo, 'text-halo-width': 1.6,
         },
       },
 

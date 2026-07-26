@@ -271,6 +271,47 @@ dichter padennetwerk zal datzelfde getal veel hoger uitvallen.
 
 ---
 
+# Meting 6 — "het zijn vaak geen rondjes"
+
+Ook terecht, en ook te kwantificeren: welk deel van de route loop je twee keer?
+Voor elk punt kijken of er een ander punt bestaat dat ver weg is lángs de route
+maar dichtbij in de ruimte.
+
+Gemeten op de drie routes die de app maakte: **10%, 27% en 34% dubbel gelopen.**
+
+De oorzaak stond in de peilingen van de 9 km-route: **169°, 16° en 355°** — twee
+van de drie punten liggen 21° van elkaar. De harde categorie-eis overrulede de
+spreiding: is er van een soort alleen aan één kant iets te vinden, dan koos de
+selectie dat punt ongeacht waar de andere lagen.
+
+Opgelost met een clusterstraf: een punt dat binnen tweederde van de sectorbreedte
+van een al gekozen punt ligt, wordt afgestraft. De 9 km-route ging daarmee van 34%
+naar 25%, en de gekozen 5,4 km is nu 11% — een echt rondje.
+
+## De afweging die niet op te lossen is
+
+Onder de kandidaten kwam deze langs: **7,73 km, 76% paadjes, 62% dubbel gelopen.**
+Naast: **5,36 km, 41% paadjes, 11% dubbel.**
+
+Dat is geen bug maar de aard van het gebied: de mooie paadjes zijn heen-en-terug
+het bos in, en een rondje sluiten vereist een landweg. Beide wensen kunnen hier
+niet tegelijk.
+
+Daarom laat de app niet drie bijna gelijke rondjes zien maar spreidt hij de keuze
+over de afweging — de beste op de rangschikking, de meest paadjesrijke, en het
+rondste — en zet beide getallen op het kaartje. Rondje-zijn weegt zwaarder dan
+pad-aandeel bij het rangschikken, want een derde dubbel lopen valt meer op dan
+een paar procent minder bospad.
+
+## Wat er op de kaart mag
+
+De `poi`-laag ongefilterd tekenen maakt de kaart onleesbaar: in een schijf van 3 km
+zitten 174 parkeerplaatsen, 167 hekken, 146 bollards en 101 afvalbakken. Dus een
+witte lijst van 24 klassen die je onderweg wél wil zien, in mint zodat ze niet met
+de lime routelijn verwarren.
+
+---
+
 ## Doorloop, gemeten
 
 Route van 9,0 km in 25 s gesimuleerd: 0,5 → 3,0 → 5,0 km, balk 6% → 34% → 56%,

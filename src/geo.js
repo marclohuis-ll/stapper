@@ -70,6 +70,44 @@ function flattenToLine(geometry) {
   return Array.isArray(c[0]) ? c : [c];
 }
 
+/**
+ * Welk deel van de route loop je twee keer? Nul is een echt rondje, richting 1
+ * is een heen-en-terug.
+ *
+ * Werkwijze: voor elk punt kijken of er een ánder punt bestaat dat ver weg is
+ * lángs de route maar dichtbij in de ruimte. Dat is precies wat terugkeren over
+ * hetzelfde pad betekent. De afstand langs de route moet groot genoeg zijn,
+ * anders tellen buurpunten van hetzelfde stukje mee.
+ *
+ * Elk derde punt is genoeg; dat maakt het negen keer goedkoper en verandert de
+ * uitkomst nauwelijks bij een polyline van honderden punten.
+ */
+export function overlapFraction(coords, { nearM = 25, minAlongM = 250, step = 3 } = {}) {
+  if (!coords || coords.length < 4) return 0;
+
+  const pts = [];
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + distM(coords[i - 1], coords[i]));
+  const total = cum[cum.length - 1];
+  if (!total) return 0;
+
+  for (let i = 0; i < coords.length; i += step) pts.push({ c: coords[i], along: cum[i], i });
+
+  let doubled = 0;
+  for (let a = 0; a < pts.length; a++) {
+    let repeat = false;
+    for (let b = 0; b < pts.length; b++) {
+      if (Math.abs(pts[b].along - pts[a].along) < minAlongM) continue;
+      if (distM(pts[a].c, pts[b].c) < nearM) { repeat = true; break; }
+    }
+    if (repeat) {
+      const prev = a > 0 ? pts[a - 1].along : 0;
+      doubled += pts[a].along - prev;
+    }
+  }
+  return Math.min(1, doubled / total);
+}
+
 /* ── Tour-ordening ─────────────────────────────────────────────────────────
    Voor het aantal punten waar we mee werken (2–6) is dichtstbijzijnde-buur
    gevolgd door 2-opt ruim genoeg, en veel voorspelbaarder dan iets slimmers.
