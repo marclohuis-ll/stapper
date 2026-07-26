@@ -216,6 +216,61 @@ Magnetometerwaarden moeten gedempt worden over de eenheidscirkel, niet over
 graden: een gewoon gemiddelde springt bij de overgang van 359° naar 0° naar het
 zuiden.
 
+---
+
+# Meting 5 — "de routes lopen over grote wegen"
+
+Klacht uit echt gebruik. Terecht: BRouter geeft per segment `WayTags` mee, en
+daaruit blijkt dat de route die de app maakte rond Twickel voor **39% over wegen**
+liep — `unclassified` 17,9%, `residential` 16,1%. Dat zijn precies de
+asfaltweggetjes die als grote weg aanvoelen als je met een kind loopt.
+
+## Vier dingen geprobeerd, drie werkten niet
+
+**Ander standaardprofiel.** `hiking-mountain` 54,0% pad tegen `hiking-beta` 53,4%.
+`trekking` en `gravel` zijn fietsprofielen (30%). `shortest` 48,7%. Geen winst.
+
+**Ingebouwde profielparameters.** `hiking-mountain` heeft `consider_town`,
+`consider_forest` en `hiking_routes_preference`. De publieke server negeert ze in
+de URL, dus het profiel aangepast en geüpload (`POST /brouter/profile` werkt en
+geeft een `custom_…`-id terug). Resultaat: **49,7% — slechter.** `consider_town`
+mijdt de bebouwing door over landweggetjes te gaan; `unclassified` ging van 19%
+naar 28,5%.
+
+**Wegkosten in het profiel verzwaren.** In `hiking-mountain.brf` kost
+`unclassified` maar 1,1–1,5 en `residential` 1,0–1,1 — vrijwel hetzelfde als een
+pad. Opgeschroefd naar 4,5 en 3,5, plus `tertiary` 7 en `secondary` 12. Resultaat:
+**54,9%.** Met alleen `cycleway` en `service` verzwaard was het 56,6%; met alles
+verzwaard schoof hij van de ene wegsoort naar de andere.
+
+**Alternatieve routes nabellen.** BRouter's `alternativeidx` 1–3 over dezelfde
+punten geeft 17,8% tot 53,4% — grote spreiding, maar alt 0 was al de beste. Als
+extra stap ingebouwd en weer verwijderd: 3,8 s in plaats van 1,6 s voor precies
+nul verbetering.
+
+## Wat de oorzaak wél is
+
+Een lus door drie bruggetjes-die-op-een-pad-liggen gaf **40,4%** pad — slechter
+dan de caféroute. De punten zijn dus niet het probleem: het padennetwerk rond
+Twickel hangt niet aan elkaar, dus tussen twee bospaadjes moet je over een
+landweg. Rond 40–55% is daar het plafond, niet een instelling die verkeerd staat.
+
+## Wat er dan gedaan is
+
+Het pad-aandeel wordt nu **gemeten en getoond** — als tag op elk resultaatkaartje
+("41% paadjes", oranje onder 40%, lime boven 65%) en op het detailscherm als
+verdeling in gewone woorden: *"Onderweg: 34% bospad, 30% landweg, 24% fietspad."*
+
+En het weegt mee in de keuze: onder kandidaten die allebei binnen de
+afstandsmarge vallen wint die met meer pad. Afstand blijft voorgaan — een rondje
+van 9 km is geen antwoord op 4,5 km, hoe mooi het pad ook is.
+
+Dat lost het landschap niet op, maar het maakt zichtbaar wat je krijgt vóórdat je
+in de auto stapt. In dit gebied blijkt de eerlijke uitkomst 41%; ergens met een
+dichter padennetwerk zal datzelfde getal veel hoger uitvallen.
+
+---
+
 ## Doorloop, gemeten
 
 Route van 9,0 km in 25 s gesimuleerd: 0,5 → 3,0 → 5,0 km, balk 6% → 34% → 56%,

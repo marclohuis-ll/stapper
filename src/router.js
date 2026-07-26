@@ -16,13 +16,13 @@ export const WALK_PROFILE = 'hiking-beta';
  * @param {Array<[number,number]>} vias
  * @returns {Promise<{distanceM:number, timeS:number, coords:Array, ascendM:number}>}
  */
-export function routeLoop(start, vias, { profile = WALK_PROFILE, timeoutMs = 20000 } = {}) {
-  return request([start, ...vias, start], profile, timeoutMs);
+export function routeLoop(start, vias, { profile = WALK_PROFILE, timeoutMs = 20000, alt = 0 } = {}) {
+  return request([start, ...vias, start], profile, timeoutMs, alt);
 }
 
-async function request(seq, profile, timeoutMs) {
+async function request(seq, profile, timeoutMs, alt = 0) {
   const lonlats = seq.map(([lon, lat]) => `${lon.toFixed(6)},${lat.toFixed(6)}`).join('|');
-  const url = `${ENDPOINT}?lonlats=${lonlats}&profile=${profile}&alternativeidx=0&format=geojson`;
+  const url = `${ENDPOINT}?lonlats=${lonlats}&profile=${profile}&alternativeidx=${alt}&format=geojson`;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -49,7 +49,46 @@ async function request(seq, profile, timeoutMs) {
     timeS: Number(p['total-time']) || 0,
     ascendM: Number(p['filtered ascend']) || 0,
     coords: feat.geometry.coordinates,
+    ...surfaceShares(p.messages),
   };
+}
+
+/* Wegsoorten die als "paadje" tellen. cycleway staat er bewust niet bij: een
+ * asfaltfietspad is prima lopen maar het is niet waar je een kind mee naar
+ * buiten lokt. */
+const PATH_KINDS = ['path', 'footway', 'track', 'pedestrian', 'steps', 'bridleway'];
+
+/**
+ * BRouter geeft per segment de way-tags mee. Daaruit valt te berekenen hoeveel
+ * van de route over paadjes loopt en hoeveel over asfalt — precies het verschil
+ * tussen een wandelroute en een ommetje langs de weg.
+ *
+ * Gemeten in Twickel: kostenfactoren van wegen opschroeven verschuift dit
+ * nauwelijks (53% → 55%), want het padennetwerk hangt daar niet aan elkaar. Wat
+ * wél werkt is meerdere kandidaten maken en op dit getal kiezen.
+ */
+export function surfaceShares(messages) {
+  if (!Array.isArray(messages) || messages.length < 2) {
+    return { pathShare: null, byKind: {} };
+  }
+  const head = messages[0];
+  const iDist = head.indexOf('Distance');
+  const iTags = head.indexOf('WayTags');
+  if (iDist < 0 || iTags < 0) return { pathShare: null, byKind: {} };
+
+  const byKind = {};
+  let total = 0, path = 0;
+
+  for (let i = 1; i < messages.length; i++) {
+    const d = Number(messages[i][iDist]) || 0;
+    if (!d) continue;
+    total += d;
+    const m = /highway=([a-z_]+)/.exec(messages[i][iTags] || '');
+    const kind = m ? m[1] : 'onbekend';
+    byKind[kind] = (byKind[kind] || 0) + d;
+    if (PATH_KINDS.includes(kind)) path += d;
+  }
+  return { pathShare: total ? path / total : null, byKind };
 }
 
 /**
@@ -66,6 +105,9 @@ export async function routeOutAndBack(start, vias, opts = {}) {
     timeS: out.timeS * 2,
     ascendM: out.ascendM * 2,
     coords: [...out.coords, ...back],
+    // Dezelfde weg terug, dus dezelfde verhouding pad/asfalt.
+    pathShare: out.pathShare,
+    byKind: out.byKind,
   };
 }
 
