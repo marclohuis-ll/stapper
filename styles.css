@@ -813,7 +813,22 @@ button { font-family: inherit; color: inherit; }
   background: var(--lime); color: var(--ink); border: 0;
   box-shadow: 0 8px 22px rgba(201,242,110,.2);
 }
+.sticker-cell { position: relative; }
 .sticker-cell .ms { font-size: 29px; }
+/* Meer dan één van dezelfde soort gevonden. */
+.sticker-cell__n {
+  position: absolute; right: 7px; bottom: 6px;
+  font-family: var(--f-display); font-weight: 900; font-size: 12px;
+  color: var(--ink); opacity: .55;
+}
+
+.btn-export {
+  margin-top: 26px; width: 100%; height: 54px; border-radius: 999px;
+  border: 1px solid var(--line-soft); background: var(--panel); color: var(--text);
+  font-family: var(--f-display); font-size: 15.5px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+}
+.btn-export .ms { font-size: 20px; color: var(--lime); }
 
 /* ── Kaart ──────────────────────────────────────────────────────────────── */
 /* Eén MapLibre-instantie die tussen schermen verhuist; zie src/mapview.js. */

@@ -17,6 +17,7 @@ import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
 import { bearing } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
+import * as store from './src/store.js';
 import * as mapview from './src/mapview.js';
 
 /* ── Feature flags ───────────────────────────────────────────────────────── */
@@ -39,11 +40,6 @@ const KID_HINTS = [
   { icon: 'water',        label: 'zoek water' },
   { icon: 'photo_camera', label: 'maak foto' },
   { icon: 'volume_up',    label: 'voorlezen' },
-];
-
-const STICKER_ICONS = [
-  'emoji_nature', 'forest', 'egg', 'sailing', 'castle', 'pets',
-  'water_drop', 'park', 'nightlight', 'cake', 'star', 'diamond',
 ];
 
 /* Stickers zijn per soort punt; die van het gevonden punt wordt uitgereikt. */
@@ -78,6 +74,11 @@ const state = {
   code: '',
   showSticker: false,
   showLock: false,
+
+  /* Uit IndexedDB, geladen bij het opstarten. */
+  stickers: [],
+  saved: [],
+  walks: [],
 };
 
 /* ── De wandeling ────────────────────────────────────────────────────────
@@ -175,7 +176,10 @@ views.home = () => `
 
         ${state.routes.length ? `
           <div class="section-head section-head--tight">Laatst gevonden</div>
-          <div class="trail">${state.routes.map(routeRow).join('')}</div>` : ''}
+          <div class="trail">${state.routes.map(routeRow).join('')}</div>`
+        : state.saved.length ? `
+          <div class="section-head section-head--tight">Bewaarde rondjes</div>
+          <div class="trail">${state.saved.map(savedRouteRow).join('')}</div>` : ''}
       </div>
     </div>
   </div>`;
@@ -436,7 +440,12 @@ views.detail = () => {
     </div>
 
     <div class="screen__footer">
-      <button class="btn-round" data-act="bewaar" aria-label="Rondje bewaren">${ico('bookmark')}</button>
+      ${(() => {
+        const opgeslagen = state.saved.some((x) => x.naam === r.naam);
+        return `<button class="btn-round" data-act="bewaar" aria-pressed="${opgeslagen}"
+                        aria-label="${opgeslagen ? 'Uit bewaarde rondjes halen' : 'Rondje bewaren'}">
+          ${ico(opgeslagen ? 'bookmark_added' : 'bookmark')}</button>`;
+      })()}
       <button class="btn-cta btn-cta--flex" data-go="onderweg">Start de wandeling</button>
     </div>
   </div>`;
@@ -619,7 +628,13 @@ const lockOverlay = () => `
     <button class="lock__back" data-act="close-lock">terug naar kindmodus</button>
   </div>`;
 
-views.profiel = () => `
+views.profiel = () => {
+  const perSoort = {};
+  for (const s of state.stickers) perSoort[s.category] = (perSoort[s.category] || 0) + 1;
+
+  const km = state.walks.reduce((sum, w) => sum + (w.walkedM || 0), 0) / 1000;
+
+  return `
   <div class="screen">
     <div class="screen__body">
       <div class="sheet">
@@ -632,7 +647,7 @@ views.profiel = () => `
             <div class="avatar">${esc(state.profile.naam[0])}</div>
             <div>
               <h1 class="profiel__name">${esc(state.profile.naam)}, ${state.profile.leeftijd} jaar</h1>
-              <div class="profiel__stats">nog geen wandelingen bewaard</div>
+              <div class="profiel__stats">${esc(statsLine(km))}</div>
             </div>
           </div>
         </div>
@@ -640,15 +655,52 @@ views.profiel = () => `
         <div class="profiel__body">
           <div class="section-head" style="margin-top:0">Verzameld</div>
           <div class="stickers">
-            ${STICKER_ICONS.map((icon, i) => {
-              const vol = CONFIG.stickerBeloningen && i < 9;
-              return `<div class="sticker-cell ${vol ? 'sticker-cell--on' : ''}">${ico(icon)}</div>`;
+            ${CATEGORIES.map((c) => {
+              const n = perSoort[c.key] || 0;
+              return `<div class="sticker-cell ${n ? 'sticker-cell--on' : ''}"
+                           title="${esc(c.label)}${n > 1 ? ` — ${n}×` : ''}">
+                ${ico(STICKER_FOR[c.key] || c.icon)}
+                ${n > 1 ? `<span class="sticker-cell__n">${n}</span>` : ''}
+              </div>`;
             }).join('')}
           </div>
+
+          ${state.saved.length ? `
+            <div class="section-head section-head--tight" style="margin-top:28px">Bewaarde rondjes</div>
+            ${state.saved.map(savedRouteRow).join('')}` : `
+            <p class="hint-line" style="margin-top:24px">Nog geen rondjes bewaard.
+              Tik op de bladwijzer bij een route om hem hier te zetten.</p>`}
+
+          <button class="btn-export" data-act="export">
+            ${ico('download')}Alles opslaan als bestand
+          </button>
+          <p class="hint-line">Alles staat alleen op dit toestel. Eén gewiste telefoon
+            en het boek is weg, dus bewaar af en toe een kopie.</p>
         </div>
       </div>
     </div>
   </div>`;
+};
+
+function statsLine(km) {
+  const w = state.walks.length, s = state.stickers.length;
+  if (!w && !s) return 'nog geen wandelingen';
+  const delen = [];
+  delen.push(w === 1 ? '1 wandeling' : `${w} wandelingen`);
+  if (km >= 0.1) delen.push(`${komma(km)} km`);
+  delen.push(s === 1 ? '1 sticker' : `${s} stickers`);
+  return delen.join(' · ');
+}
+
+const savedRouteRow = (r) => `
+  <button class="route-row route-row--saved" data-act="open-saved" data-id="${esc(r.id)}">
+    <span class="route-row__ico">${ico(r.pois && r.pois[0] ? r.pois[0].icon : 'forest')}</span>
+    <span class="route-row__text">
+      <span class="route-row__name">${esc(r.naam)}</span>
+      <span class="route-row__meta">${esc(r.km)} · ${esc(r.tijd)} · ${esc(r.punten)}</span>
+    </span>
+    ${ico('chevron_right', 'route-row__chev')}
+  </button>`;
 
 /* ── Render ─────────────────────────────────────────────────────────────── */
 const app = document.getElementById('app');
@@ -716,6 +768,7 @@ function startWalk() {
 }
 
 function stopWalk() {
+  legWandelingVast();
   if (walk.stopWatch) walk.stopWatch();
   if (walk.stopCompass) walk.stopCompass();
   clearTimeout(walk.nudgeTimer);
@@ -789,13 +842,100 @@ function claimSticker({ force = false } = {}) {
     return;
   }
 
-  walk.sticker = pr.next;
-  walk.tracker.markReached(pr.next.index);
+  const found = pr.next;
+  walk.sticker = found;
+  walk.tracker.markReached(found.index);
   walk.progress = walk.tracker.update(state.position);
   walk.override = false;
   walk.nudge = '';
   state.showSticker = true;
   render();
+
+  // Vastleggen mag de sticker niet ophouden: het kind ziet hem meteen, de
+  // opslag volgt. Mislukt dat, dan is de wandeling niet stuk.
+  store.addSticker({
+    category: found.category, naam: found.naam,
+    lat: found.coord[1], lon: found.coord[0],
+    routeNaam: (currentRoute() || {}).naam || null,
+  }).then(() => store.listStickers())
+    .then((all) => { state.stickers = all; refreshIfShowing('profiel'); })
+    .catch((e) => console.warn('sticker niet opgeslagen:', e.message));
+}
+
+/** Hertekenen alleen als het huidige scherm die data ook toont. Anders zou een
+ *  achtergrondtaak de kaart onnodig opnieuw opbouwen en laten flikkeren. */
+function refreshIfShowing(...screens) {
+  if (screens.includes(state.screen)) render();
+}
+
+/* ── Opslag ─────────────────────────────────────────────────────────────── */
+
+async function laadOpslag() {
+  try {
+    store.requestPersistence();          // niet op wachten; het is een verzoek
+    const [profiel, stickers, saved, walks] = await Promise.all([
+      store.getProfile(), store.listStickers(), store.listSavedRoutes(), store.listWalks(),
+    ]);
+    // Alleen overnemen als er echt een profiel staat; anders het huidige bewaren.
+    if (profiel && profiel.naam) state.profile = profiel;
+    else store.setProfile(state.profile);
+    state.stickers = stickers;
+    state.saved = saved;
+    state.walks = walks;
+    render();
+  } catch (e) {
+    // Zonder opslag werkt de app verder; alleen het boek onthoudt niets.
+    console.warn('opslag niet beschikbaar:', e.message);
+  }
+}
+
+async function bewaarRoute(button) {
+  const r = currentRoute();
+  if (!r) return;
+  const id = r.id && r.id.startsWith('saved-') ? r.id : `saved-${Date.now()}`;
+  const aanwezig = state.saved.some((x) => x.id === id || x.naam === r.naam);
+
+  if (aanwezig) {
+    const bestaand = state.saved.find((x) => x.naam === r.naam);
+    await store.deleteRoute(bestaand.id);
+  } else {
+    await store.saveRoute({ ...r, id });
+  }
+  state.saved = await store.listSavedRoutes();
+
+  const nu = !aanwezig;
+  button.setAttribute('aria-pressed', String(nu));
+  button.querySelector('.ms').textContent = nu ? 'bookmark_added' : 'bookmark';
+}
+
+async function exportBestand() {
+  try {
+    const data = await store.exportAll();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stapper-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.warn('export mislukt:', e.message);
+  }
+}
+
+/** Wandeling vastleggen als er echt gelopen is. Zo blijven de statistieken in
+ *  het stickerboek eerlijk: even naar het scherm kijken is geen wandeling. */
+function legWandelingVast() {
+  const r = currentRoute();
+  const pr = walk.progress;
+  if (!r || !pr || pr.walkedM < 250) return;
+  store.recordWalk({
+    id: `walk-${Date.now()}`, naam: r.naam, km: r.km,
+    distanceM: r.distanceM, walkedM: Math.round(pr.walkedM),
+    punten: pr.reachedCount, voltooid: pr.done,
+  }).then(() => store.listWalks())
+    .then((all) => { state.walks = all; refreshIfShowing('profiel', 'home'); })
+    .catch((e) => console.warn('wandeling niet opgeslagen:', e.message));
 }
 
 function showNudge(text) {
@@ -962,11 +1102,19 @@ app.addEventListener('click', (e) => {
       go('detail');
       break;
 
-    case 'bewaar':
-      el.setAttribute('aria-pressed', el.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
-      el.querySelector('.ms').textContent =
-        el.getAttribute('aria-pressed') === 'true' ? 'bookmark_added' : 'bookmark';
+    case 'bewaar': bewaarRoute(el); break;
+
+    case 'open-saved': {
+      const r = state.saved.find((x) => x.id === el.dataset.id);
+      if (!r) break;
+      // Bewaarde rondjes doen als de zojuist gegenereerde: vooraan zetten en openen.
+      state.routes = [r, ...state.routes.filter((x) => x.id !== r.id)];
+      state.routeId = 0;
+      go('detail');
       break;
+    }
+
+    case 'export': exportBestand(); break;
 
     case 'pauze': state.pauze = !state.pauze; render(); break;
 
@@ -1025,6 +1173,8 @@ window.addEventListener('hashchange', () => enter(fromHash() || 'welkom'));
 
 const initial = fromHash();
 if (initial) { enter(initial); } else { location.replace('#/welkom'); enter('welkom'); }
+
+laadOpslag();
 
 /* ── Service worker ─────────────────────────────────────────────────────── */
 /* Niet op localhost, tenzij je hem expliciet wil testen met ?sw.

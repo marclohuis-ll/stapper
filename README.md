@@ -94,7 +94,7 @@ linken.
 | `#/detail` | Route op de kaart + punten onderweg | echt |
 | `#/onderweg` | Live wandeling: kaart, voortgang, volgend punt | echt |
 | `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
-| `#/profiel` | Stickerboek | **nog demo** — wacht op opslag |
+| `#/profiel` | Stickerboek, bewaarde rondjes, export | echt |
 
 ## Feature flags
 
@@ -134,10 +134,25 @@ wandeling doorlopen. Drie dingen die niet uit het ontwerp af te lezen zijn:
   en kan het nooit onterecht tegenhouden: na een mislukte poging verschijnt er
   "toch gevonden" onder de knop.
 
-## Nog te doen
+## Opslag
 
-- **Opslag**: profiel, bewaarde rondjes en stickerboek in IndexedDB, plus de
-  JSON-exportknop. Het stickerboek toont nu nog vaste waarden.
+Alles in IndexedDB op dit ene toestel — er is geen backend, dat was beslissing 1.
+Profiel, stickers, bewaarde rondjes en gelopen wandelingen. `navigator.storage.persist()`
+wordt gevraagd zodat Android het niet opruimt als de telefoon vol raakt.
+
+Een bewaard rondje bevat de hele geometrie (een paar kB), dus je kunt hem later
+opnieuw lopen zonder opnieuw te genereren, ook zonder bereik.
+
+Twee dingen die geen bug zijn maar een keuze. Onder 250 meter gelopen telt niet
+als wandeling — even naar het scherm kijken hoort de statistieken niet te
+vervuilen. En elke sticker krijgt een `childId` mee terwijl er één kind is: dat
+kost nu één veld en scheelt later een schemamigratie die je zou moeten testen
+tegen de echte, opgebouwde geschiedenis van je kind.
+
+De exportknop onderin het stickerboek schrijft alles als JSON weg. Dat is de
+enige back-up die er is.
+
+## Nog te doen
 - **Offline**: service worker, en de vectortiles van de gekozen route vóór
   vertrek in de Cache API.
 - **Geocaches**: wacht op de opencaching.nl-key.
