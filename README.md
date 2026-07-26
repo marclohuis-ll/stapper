@@ -51,6 +51,29 @@ speeltuin en een bruggetje" kan. Ze doen rondjes óf via-punten, nooit beide. Du
    omwegfactor van echte paden wordt uit de eerste routercall geleerd, waarna de
    ringradius in één stap volgt. Doel: binnen ±15%.
 
+### Hoeveel loopt er over paadjes?
+
+Uit de `WayTags` die BRouter per segment meegeeft rekent de app uit welk deel van
+de route over bospad, voetpad of zandpad gaat. Dat staat als tag op elk
+resultaatkaartje en als verdeling op het detailscherm — *"Onderweg: 34% bospad,
+30% landweg, 24% fietspad."*
+
+Het weegt ook mee in de keuze: onder kandidaten die allebei binnen de
+afstandsmarge vallen wint die met meer pad.
+
+Wat het **niet** doet is het landschap veranderen. Rond Twickel hangt het
+padennetwerk niet aan elkaar, dus tussen twee bospaadjes moet je over een
+landweg, en 40–55% is daar het plafond. Verzwaarde routerkosten, andere profielen
+en alternatieve routes zijn alle drie gemeten en leverden niets op — zie
+[BEVINDINGEN.md](spike/BEVINDINGEN.md), meting 5. Wat het getal wél doet: je ziet
+vóór vertrek wat je krijgt.
+
+### Startpunt
+
+Standaard je GPS-positie, maar via *Startpunt* op het instelscherm kun je een plek
+zoeken op naam (Nominatim) of de kaart onder het kruis schuiven. Zo maak je thuis
+een route voor morgen.
+
 Elke aangevinkte soort komt **gegarandeerd** in de route. Past dat niet binnen de
 gevraagde afstand, dan laat de app liever een eis vieren dan te liegen over de
 afstand: je krijgt kortere rondjes met een badge als "Zonder speeltuin", náást het

@@ -15,9 +15,10 @@ import { generateRoutes, GenerateError } from './src/generator.js';
 import { getPosition, watchPosition, LocationError, INSECURE } from './src/geolocate.js';
 import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
-import { bearing } from './src/geo.js';
+import { bearing, distM } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
 import { searchCaches } from './src/okapi.js';
+import { zoekPlaats } from './src/geocode.js';
 import * as store from './src/store.js';
 import * as offline from './src/offline.js';
 import * as mapview from './src/mapview.js';
@@ -65,7 +66,7 @@ const STICKER_FOR = {
   knooppunt: 'signpost', schuilhut: 'cabin', picknick: 'emoji_nature', uitkijk: 'landscape',
 };
 
-const SCREENS = ['welkom','home','instellen','zoeken','resultaten','detail','onderweg','kind','profiel'];
+const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','onderweg','kind','profiel'];
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 const state = {
@@ -78,6 +79,11 @@ const state = {
   position: null,
   locating: false,
   locationError: null,
+
+  /* Zelf gekozen startpunt; null betekent: gebruik de GPS. */
+  startKeuze: null,
+  plaatsZoek: '',
+  plaatsResultaten: null,
 
   routes: [],
   routeId: null,
@@ -284,13 +290,13 @@ views.instellen = () => {
           </div>
 
           <div class="pair">
-            <div class="pair__cell pair__cell--start">
-              ${ico('my_location')}
-              <div>
-                <div class="pair__k">Startpunt</div>
-                <div class="pair__v">${state.position ? 'Hier waar ik sta' : 'Nog onbekend'}</div>
-              </div>
-            </div>
+            <button class="pair__cell pair__cell--start" data-go="startpunt">
+              ${ico(state.startKeuze ? 'place' : 'my_location')}
+              <span class="pair__text">
+                <span class="pair__k">Startpunt</span>
+                <span class="pair__v">${esc(startLabel())}</span>
+              </span>
+            </button>
             <button class="pair__cell pair__cell--shape" data-act="toggle-shape"
                     aria-pressed="${state.shape === 'loop'}">
               ${ico(state.shape === 'loop' ? 'refresh' : 'sync_alt')}
@@ -335,6 +341,56 @@ const cacheCard = () => `
     </span>
     <span class="switch"><span class="switch__knob"></span></span>
   </button>`;
+
+const startLabel = () => {
+  const k = state.startKeuze;
+  if (k) return k.naam || `${k.lat.toFixed(4)}, ${k.lon.toFixed(4)}`;
+  if (state.position) return 'Hier waar ik sta';
+  return 'Nog onbekend';
+};
+
+/** Het punt waarvandaan gezocht wordt: een gekozen plek, anders je GPS. */
+const startPunt = () => state.startKeuze
+  ? { lat: state.startKeuze.lat, lon: state.startKeuze.lon }
+  : (state.position ? { lat: state.position.lat, lon: state.position.lon } : null);
+
+/* ── Startpunt kiezen ─────────────────────────────────────────────────────
+   "Rondjes vanaf waar je nu staat" is de belofte, maar je wil ook thuis een
+   route voor morgen kunnen maken. Dus: zoeken op naam, of de kaart verschuiven
+   en het kruis in het midden gebruiken.
+   ───────────────────────────────────────────────────────────────────────── */
+views.startpunt = () => `
+  <div class="screen">
+    <div class="startpunt">
+      <div class="startpunt__map" id="startpunt-map"></div>
+      <div class="startpunt__kruis" aria-hidden="true">${ico('add')}</div>
+
+      <div class="startpunt__top">
+        <button class="btn-icon" data-go="instellen" aria-label="Terug">${ico('arrow_back')}</button>
+        <form class="zoekbalk" data-act="zoek-plaats">
+          ${ico('search')}
+          <input class="zoekbalk__input" name="q" placeholder="Zoek een plek of adres"
+                 value="${esc(state.plaatsZoek || '')}" autocomplete="off" enterkeyhint="search">
+        </form>
+      </div>
+
+      ${state.plaatsResultaten && state.plaatsResultaten.length ? `
+        <div class="zoekhits">
+          ${state.plaatsResultaten.map((p, i) => `
+            <button class="zoekhit" data-act="kies-hit" data-i="${i}">
+              ${ico('place')}<span>${esc(p.naam)}</span>
+            </button>`).join('')}
+        </div>` : ''}
+
+      <div class="startpunt__onder">
+        <p class="startpunt__uitleg">Schuif de kaart tot het kruis op je startpunt staat.</p>
+        <div class="startpunt__acties">
+          <button class="btn-ghost" data-act="start-hier">${ico('my_location')}Mijn locatie</button>
+          <button class="btn-cta btn-cta--flex" data-act="start-kies">Dit wordt het startpunt</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
 
 views.zoeken = () => `
   <div class="screen">
@@ -417,6 +473,7 @@ views.resultaten = () => {
                   <span class="tag">${esc(r.km)}</span>
                   <span class="tag">${esc(r.tijd)}</span>
                   <span class="tag tag--lime">${esc(r.punten)}</span>
+                  ${r.padLabel ? `<span class="tag ${padKlasse(r.pathShare)}">${esc(r.padLabel)}</span>` : ''}
                 </span>
               </span>
             </button>`).join('')}
@@ -425,6 +482,30 @@ views.resultaten = () => {
     </div>
   </div>`;
 };
+
+const WEG_NAAM = {
+  path: 'bospad', footway: 'voetpad', track: 'zandpad', pedestrian: 'wandelgebied',
+  steps: 'trap', bridleway: 'ruiterpad', cycleway: 'fietspad',
+  residential: 'woonstraat', unclassified: 'landweg', service: 'toegangsweg',
+  living_street: 'woonerf', tertiary: 'doorgaande weg', secondary: 'drukke weg',
+  primary: 'hoofdweg', onbekend: 'onbekend',
+};
+
+/** Waar de route over loopt, in gewone woorden — de drie grootste soorten. */
+function wegVerdeling(r) {
+  const tot = Object.values(r.byKind).reduce((a, b) => a + b, 0);
+  if (!tot) return '';
+  const delen = Object.entries(r.byKind)
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([k, v]) => `${Math.round(v / tot * 100)}% ${WEG_NAAM[k] || k}`);
+  return `Onderweg: ${delen.join(', ')}.`;
+}
+
+/* Hoeveel van de route over paadjes gaat, in kleur. Boven 65% is het een
+ * wandeling, onder 40% loop je vooral langs de weg — dat mag je zien vóórdat je
+ * een route kiest. */
+const padKlasse = (share) =>
+  share == null ? '' : share >= 0.65 ? 'tag--lime' : share >= 0.4 ? 'tag--mint' : 'tag--warn';
 
 const missingLabel = () => state.missing
   .map((k) => (CATEGORIES.find((c) => c.key === k) || {}).label || k)
@@ -449,7 +530,9 @@ views.detail = () => {
             <span class="tag tag--lg">${esc(r.km)}</span>
             <span class="tag tag--lg">± ${esc(r.tijd)}</span>
             <span class="tag tag--lg ${r.dropped.length ? 'tag--warn' : 'tag--mint'}">${esc(r.badge)}</span>
+            ${r.padLabel ? `<span class="tag tag--lg ${padKlasse(r.pathShare)}">${esc(r.padLabel)}</span>` : ''}
           </div>
+          ${r.byKind ? `<p class="hint-line">${esc(wegVerdeling(r))}</p>` : ''}
 
           ${offlineCard()}
 
@@ -885,7 +968,10 @@ function render() {
   photoUrls.forEach(URL.revokeObjectURL);
   photoUrls = [];
 
-  if (lastScreen === 'detail' && state.screen !== 'detail') mapview.detach();
+  const kaartSchermen = ['detail', 'onderweg', 'startpunt'];
+  if (kaartSchermen.includes(lastScreen) && !kaartSchermen.includes(state.screen)) {
+    mapview.detach();
+  }
 
   app.innerHTML = (views[state.screen] || views.welkom)();
 
@@ -899,6 +985,16 @@ function render() {
 
 /** De kaart verhuist naar het scherm dat hem nodig heeft. */
 async function mountMap() {
+  if (state.screen === 'startpunt') {
+    const host = document.getElementById('startpunt-map');
+    if (!host) return;
+    const map = await mapview.attach(window.maplibregl, host);
+    mapview.render({ route: null, position: state.position, fit: false });
+    const p = startPunt();
+    if (p) map.jumpTo({ center: [p.lon, p.lat], zoom: 14 });
+    return;
+  }
+
   const hostId = state.screen === 'detail' ? 'detail-map'
                : state.screen === 'onderweg' ? 'onderweg-map' : null;
   if (!hostId) return;
@@ -1353,10 +1449,12 @@ async function aanvullen({ lat, lon, radiusM, keys }) {
   return { pois: [...overpass.pois, ...cachePois], failed };
 }
 async function zoek() {
-  if (!state.position) {
+  // Een zelfgekozen startpunt gaat voor; anders de GPS, en die dan wel nodig.
+  if (!startPunt()) {
     await locate();
-    if (!state.position) { go('home'); return; }
+    if (!startPunt()) { go('home'); return; }
   }
+  const start = startPunt();
 
   state.routes = [];
   state.genError = null;
@@ -1369,7 +1467,7 @@ async function zoek() {
     if (!harvester) harvester = createHarvester(window.maplibregl);
 
     const out = await generateRoutes({
-      lat: state.position.lat, lon: state.position.lon,
+      lat: start.lat, lon: start.lon,
       targetKm: state.km, chips: pickedKeys(), shape: state.shape,
       harvester, supplement: aanvullen,
       kidFactor: kidFactor(state.profile.leeftijd),
@@ -1450,6 +1548,44 @@ app.addEventListener('click', (e) => {
     case 'import': app.querySelector('[data-act="import-file"]')?.click(); break;
     case 'download-offline': haalOffline(); break;
 
+    /* ── startpunt ── */
+    case 'start-hier':
+      state.startKeuze = null;
+      state.plaatsResultaten = null;
+      if (!state.position) locate();
+      go('instellen');
+      break;
+
+    case 'start-kies': {
+      const map = mapview.instance();
+      if (!map) break;
+      const c = map.getCenter();
+      // De naam alleen houden als je nog op de gekozen plek staat. Niet uit het
+      // zoekveld overnemen: dat kan een term bevatten die niets opleverde, en dan
+      // zou een willekeurig kaartmidden zich voordoen als die plek.
+      const vorige = state.startKeuze;
+      const zelfdePlek = vorige && vorige.naam &&
+        distM([c.lng, c.lat], [vorige.lon, vorige.lat]) < 80;
+      state.startKeuze = {
+        lat: c.lat, lon: c.lng,
+        naam: zelfdePlek ? vorige.naam : null,
+      };
+      state.plaatsResultaten = null;
+      go('instellen');
+      break;
+    }
+
+    case 'kies-hit': {
+      const hit = (state.plaatsResultaten || [])[Number(el.dataset.i)];
+      if (!hit) break;
+      state.plaatsZoek = hit.naam;
+      state.plaatsResultaten = null;
+      state.startKeuze = { lat: hit.lat, lon: hit.lon, naam: hit.naam };
+      render();
+      mapview.instance()?.jumpTo({ center: [hit.lon, hit.lat], zoom: 14 });
+      break;
+    }
+
     case 'edit-profiel':   state.editProfile = true;  render(); break;
     case 'cancel-profiel': state.editProfile = false; render(); break;
     case 'set-code':       state.editSetting = 'code';  render(); break;
@@ -1495,6 +1631,19 @@ app.addEventListener('submit', (e) => {
   if (!form) return;
   e.preventDefault();
   const data = new FormData(form);
+
+  if (form.dataset.act === 'zoek-plaats') {
+    const q = String(data.get('q') || '').trim();
+    state.plaatsZoek = q;
+    zoekPlaats(q)
+      .then((hits) => {
+        state.plaatsResultaten = hits.length ? hits : [];
+        render();
+        if (!hits.length) showNudge('Niets gevonden.');
+      })
+      .catch(() => { state.plaatsResultaten = []; render(); showNudge('Zoeken lukte niet.'); });
+    return;
+  }
 
   if (form.dataset.act === 'save-profiel') {
     const naam = String(data.get('naam') || '').trim();

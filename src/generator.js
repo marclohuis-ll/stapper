@@ -94,6 +94,7 @@ export async function generateRoutes({
       const info = {
         i, subset: subset.join('+'), stops: cand.pois.length, ringM: Math.round(cand.ringM),
         km: +(cand.distanceM / 1000).toFixed(2), error: +cand.error.toFixed(3),
+        pad: cand.pathShare == null ? null : Math.round(cand.pathShare * 100),
         cats: cand.pois.map((p) => p.category).join('+'),
       };
       if (seen.has(fingerprint)) { attempts.push({ ...info, reason: 'zelfde punten' }); continue; }
@@ -135,7 +136,14 @@ export async function generateRoutes({
     throw new GenerateError('Geen route gevonden. Probeer een andere afstand of minder eisen.');
   }
 
-  const byError = (a, b) => a.error - b.error;
+  // Binnen de marge sorteren op pad-aandeel, daarbuiten op afstandsfout: eerst
+  // een antwoord op de vraag, dan zo veel paadjes als mogelijk.
+  const byError = (a, b) => {
+    const aOk = a.error <= TOLERANCE, bOk = b.error <= TOLERANCE;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    if (aOk && bOk) return (b.pathShare ?? 0) - (a.pathShare ?? 0);
+    return a.error - b.error;
+  };
   const fits = (c) => c.error <= MAX_ERROR;
   const full = candidates.filter((c) => !c.dropped.length).sort(byError);
   const relaxed = candidates.filter((c) => c.dropped.length).sort(byError);
@@ -212,12 +220,16 @@ async function buildCandidate({
     }
 
     const error = Math.abs(leg.distanceM - targetM) / targetM;
-    if (!best || error < best.error) {
-      best = {
-        distanceM: leg.distanceM, timeS: leg.timeS, ascendM: leg.ascendM,
-        coords: leg.coords, pois: tour, error, ringM: r, stops: tour.length,
-      };
-    }
+    const kandidaat = {
+      distanceM: leg.distanceM, timeS: leg.timeS, ascendM: leg.ascendM,
+      coords: leg.coords, pois: tour, error, ringM: r, stops: tour.length,
+      pathShare: leg.pathShare, byKind: leg.byKind,
+    };
+    // Zit de afstand goed, dan is het pad-aandeel de tiebreak: het is een
+    // wandelapp, dus tussen twee rondjes van de juiste lengte wint het rondje
+    // dat over paadjes gaat.
+    if (!best || beter(kandidaat, best)) best = kandidaat;
+
     if (error <= TOLERANCE) break;
 
     // Leer de omweg-factor uit wat de router werkelijk deed, en los daarmee de
@@ -245,7 +257,34 @@ async function buildCandidate({
     if (Math.abs(next - r) < 25) break;
     r = clamp(next, 120, targetM / 2);
   }
+
   return best;
+}
+
+/* Geprobeerd en verworpen: BRouter's alternatieve routes (alternativeidx 1 en 2)
+ * over dezelfde punten nabellen en de meest paadjesrijke houden. Kostte 3,8 s in
+ * plaats van 1,6 s en leverde in Twickel precies nul verbetering — de variatie in
+ * pad-aandeel komt van welke púnten je kiest, niet van welke route ertussen. De
+ * `alt`-parameter in router.js is blijven staan; die is bruikbaar als je hier ooit
+ * op terug wil komen. */
+
+/**
+ * Is a beter dan b? Afstand eerst — een rondje van 9 km is geen antwoord op
+ * 4,5 km, hoe mooi het pad ook is. Maar zodra beide binnen de marge vallen,
+ * beslist het pad-aandeel.
+ *
+ * Waarom die volgorde: gemeten in Twickel schuift het pad-aandeel tussen
+ * kandidaten van 40% naar 55%, en dat verschil is groter dan wat je met
+ * routerkosten kunt afdwingen. Zoeken en kiezen werkt hier beter dan sturen.
+ */
+function beter(a, b) {
+  const aOk = a.error <= TOLERANCE, bOk = b.error <= TOLERANCE;
+  if (aOk !== bOk) return aOk;
+  if (aOk && bOk) {
+    const verschil = (a.pathShare ?? 0) - (b.pathShare ?? 0);
+    if (Math.abs(verschil) > 0.04) return verschil > 0;
+  }
+  return a.error < b.error;
 }
 
 /* ── Puntenselectie: spreid de peilingen ──────────────────────────────────
@@ -360,6 +399,9 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
       walkTimeS: c.timeS,
       kidTimeS: c.timeS * kidFactor,
       punten: `${c.pois.length} punten`,
+      pathShare: c.pathShare,
+      padLabel: c.pathShare == null ? null : `${Math.round(c.pathShare * 100)}% paadjes`,
+      byKind: c.byKind,
       omschrijving: describe(c),
       pois: c.pois.map((p, n) => ({
         naam: p.label, icon: p.icon, category: p.category, coord: p.coord,

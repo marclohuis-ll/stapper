@@ -848,6 +848,63 @@ button { font-family: inherit; color: inherit; }
   color: var(--ink); opacity: .55;
 }
 
+/* ── Startpunt kiezen ───────────────────────────────────────────────────── */
+.startpunt { position: absolute; inset: 0; overflow: hidden; }
+.startpunt__map { position: absolute; inset: 0; }
+
+/* Het kruis staat vast in het midden; je schuift de kaart eronderdoor. Dat is
+   nauwkeuriger dan een pin proberen te slepen met een duim. */
+.startpunt__kruis {
+  position: absolute; left: 50%; top: 50%; z-index: 3;
+  transform: translate(-50%, -50%); pointer-events: none;
+  width: 46px; height: 46px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: rgba(12,26,23,.55); border: 2px solid var(--lime);
+  box-shadow: 0 0 0 6px rgba(201,242,110,.14);
+}
+.startpunt__kruis .ms { font-size: 24px; color: var(--lime); }
+
+.startpunt__top {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 4;
+  padding: calc(14px + env(safe-area-inset-top)) 14px 0;
+  display: flex; gap: 10px; align-items: center;
+}
+.zoekbalk {
+  flex: 1; display: flex; gap: 9px; align-items: center;
+  padding: 0 14px; height: 46px; border-radius: 999px;
+  background: rgba(12,26,23,.88); border: 1px solid var(--line-soft);
+}
+.zoekbalk .ms { font-size: 20px; color: var(--text-66); }
+.zoekbalk__input {
+  flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 15px; outline: none;
+}
+
+.zoekhits {
+  position: absolute; left: 14px; right: 14px; top: calc(70px + env(safe-area-inset-top));
+  z-index: 4; border-radius: 20px; overflow: hidden;
+  background: rgba(12,26,23,.95); border: 1px solid var(--line-soft);
+}
+.zoekhit {
+  width: 100%; display: flex; gap: 10px; align-items: center; text-align: left;
+  padding: 13px 15px; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.zoekhit + .zoekhit { border-top: 1px solid rgba(255,255,255,.07); }
+.zoekhit .ms { font-size: 18px; color: var(--mint); flex: none; }
+
+.startpunt__onder {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 62%, rgba(12,26,23,0));
+}
+.startpunt__uitleg {
+  margin: 0 0 12px; text-align: center; font-size: 12.5px; color: var(--text-66);
+}
+.startpunt__acties { display: flex; gap: 10px; }
+.startpunt__acties .btn-ghost { flex: none; padding: 0 16px; display: flex; align-items: center; gap: 7px; }
+.startpunt__acties .btn-ghost .ms { font-size: 18px; }
+
 /* ── Foto's onderweg ────────────────────────────────────────────────────── */
 .fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .foto { margin: 0; }
