@@ -30,7 +30,9 @@ function ensure(maplibregl) {
   });
 
   ready = new Promise((res) => map.once('load', () => {
-    map.addSource(SRC, { type: 'geojson', data: empty() });
+    // lineMetrics is nodig voor line-gradient: zo kunnen we het gelopen deel
+    // anders kleuren dan de rest, zoals in het ontwerp.
+    map.addSource(SRC, { type: 'geojson', data: empty(), lineMetrics: true });
 
     map.addLayer({
       id: 'route-shadow', type: 'line', source: SRC,
@@ -42,7 +44,7 @@ function ensure(maplibregl) {
       id: 'route-line', type: 'line', source: SRC,
       filter: ['==', ['geometry-type'], 'LineString'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': MAP_COLOURS ? '#C9F26E' : '#C9F26E', 'line-width': 4.5 },
+      paint: { 'line-width': 4.5, 'line-gradient': gradientFor(null) },
     });
     map.addLayer({
       id: 'route-poi', type: 'circle', source: SRC,
@@ -83,6 +85,26 @@ function ensure(maplibregl) {
 
 const empty = () => ({ type: 'FeatureCollection', features: [] });
 
+const WALKED = '#C9F26E';                    // achter je: helder
+const AHEAD = 'rgba(234,243,234,.38)';       // voor je: gedempt
+
+/**
+ * Verloop met een harde overgang op het punt waar je nu bent. Stops moeten
+ * strikt oplopen, dus de knik zit een haartje voorbij de voortgang.
+ *
+ * `null` betekent: we volgen geen wandeling. Dan is de hele lijn helder — op het
+ * detailscherm kijk je naar een route, niet naar je voortgang erin.
+ */
+function gradientFor(fraction) {
+  const flat = (c) => ['interpolate', ['linear'], ['line-progress'], 0, c, 1, c];
+  if (fraction == null) return flat(WALKED);
+
+  const f = Math.max(0, Math.min(0.999, fraction));
+  if (f <= 0) return flat(AHEAD);
+  return ['interpolate', ['linear'], ['line-progress'],
+    0, WALKED, f, WALKED, f + 0.001, AHEAD, 1, AHEAD];
+}
+
 /** Verhuist de kaart naar dit element. Resize is nodig: MapLibre kent de nieuwe
  *  maat niet uit zichzelf. */
 export async function attach(maplibregl, container) {
@@ -99,8 +121,14 @@ export function detach() {
 }
 
 /** Zet route en eigen positie op de kaart. Beide mogen ontbreken. */
-export function render({ route, position, fit = true, padding = 40 }) {
+export function render({ route, position, progress = null, fit = true, padding = 40 }) {
   if (!map || !map.getSource(SRC)) return;
+
+  // Gelopen deel helder, de rest gedempt. Op het detailscherm (geen voortgang)
+  // is de hele lijn gedempt: je hebt er nog niets van gelopen.
+  if (map.getLayer('route-line')) {
+    map.setPaintProperty('route-line', 'line-gradient', gradientFor(progress));
+  }
 
   const features = [];
   if (route) {
@@ -130,6 +158,9 @@ export function render({ route, position, fit = true, padding = 40 }) {
     map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding, duration: 0 });
   }
 }
+
+/** De kaartinstantie, voor controleren en debuggen. */
+export const instance = () => map;
 
 export function centreOn(position, zoom = 16) {
   if (!map || !position) return;

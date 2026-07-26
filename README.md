@@ -75,6 +75,9 @@ Details en meetwaarden: [spike/BEVINDINGEN.md](spike/BEVINDINGEN.md).
 | [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel |
 | [src/compass.js](src/compass.js) | kompas voor de kindmodus, gedempt over de eenheidscirkel |
 | [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
+| [src/store.js](src/store.js) | IndexedDB: profiel, stickers, foto's, rondjes, wandelingen |
+| [src/offline.js](src/offline.js) | kaarttegels van een route vóór vertrek binnenhalen |
+| [src/okapi.js](src/okapi.js) | geocaches van opencaching.nl — **ongetest**, zie hieronder |
 | [spike/](spike) | testbanken en meetresultaten |
 | [tools/serve.ps1](tools/serve.ps1) | dev-server (geen node of python op deze machine) |
 | [design/](design) | het geïmporteerde designdocument, ongewijzigd |
@@ -96,14 +99,33 @@ linken.
 | `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
 | `#/profiel` | Stickerboek, bewaarde rondjes, export | echt |
 
-## Feature flags
+## Instellingen
 
-`CONFIG` bovenaan [app.js](app.js):
+Onderin het stickerboek, onder "Voor de grote mensen":
 
-- `geocachesAan` — **staat uit.** Beslissing 8 koos opencaching.nl, en dat vereist
-  een consumer key die nog aangevraagd moet worden. Tot die er is blijft de kaart
-  weg; een schakelaar die niets doet is erger dan geen schakelaar.
-- `stickerBeloningen` — stickers in kindmodus en het stickerboek.
+- **Naam en leeftijd** van het kind. De leeftijd bepaalt het looptempo en dus de
+  tijdschattingen.
+- **Oudercode.** Niet ingesteld betekent dat elke vier cijfers de kindmodus
+  verlaat; stel je er een in, dan moet die kloppen. Het ontwerp legt geen code
+  vast, dus dit is jouw keuze.
+- **opencaching.nl consumer key.** Zonder sleutel bestaat de geocache-categorie
+  niet; met sleutel verschijnt hij als chip. De sleutel staat in IndexedDB en
+  komt dus **niet** in de repo — die is publiek.
+- **Opslaan en terugzetten** van alles als JSON. Foto's zitten er bewust niet in;
+  dan wordt het bestand tientallen megabytes en is het geen back-up meer.
+
+## Offline
+
+De service worker cachet de app-shell en de bibliotheken. De **kaarttegels** zijn
+apart: op het detailscherm zit "Kaart offline meenemen", dat de tegels voor de
+corridor van díe route binnenhaalt op zoom 12 tot 16, plus de TileJSON en de
+letters. Voor een rondje van 5 km zijn dat ongeveer 95 bestanden.
+
+Doe dat op de wifi. In het bos zonder bereik levert de service worker de
+gedownloade tegels uit; wat er niet staat wordt een lege tegel in plaats van een
+fout, zodat de kaart niet struikelt. De tegelcache blijft staan als de app zelf
+een nieuwe versie krijgt — die tegels zijn duur om opnieuw te halen en jij staat
+dan misschien al buiten.
 
 ## Vastgelegde keuzes
 
@@ -152,9 +174,20 @@ tegen de echte, opgebouwde geschiedenis van je kind.
 De exportknop onderin het stickerboek schrijft alles als JSON weg. Dat is de
 enige back-up die er is.
 
+De drie tegels in de kindmodus doen elk iets: **wat zoeken we** geeft een
+aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
+**maak foto** legt een foto vast die in het stickerboek verschijnt, en
+**voorlezen** spreekt de afstand en het volgende punt uit via `speechSynthesis`.
+
 ## Nog te doen
 - **Offline**: service worker, en de vectortiles van de gekozen route vóór
   vertrek in de Cache API.
-- **Geocaches**: wacht op de opencaching.nl-key.
-- Leaving kindmodus accepteert nu elke vier cijfers — het ontwerp legt geen code
-  vast.
+- **De geocache-koppeling is niet getest.** [src/okapi.js](src/okapi.js) is
+  geschreven zonder consumer key, dus of de veldnamen en het locatieformaat van
+  OKAPI kloppen is onbekend. Hij faalt bewust stil: geen sleutel of een fout
+  antwoord levert nul caches en laat de routegeneratie ongemoeid. Zodra je een
+  sleutel invult is dit het eerste dat verificatie nodig heeft.
+- **Eén wandeling lopen.** Vier aannames zijn nog onbeproefd en geen regel code
+  kan ze bevestigen: leesbaarheid van de donkere kaart in fel zonlicht,
+  GPS-kwaliteit onder een bladerdek, gerammel van de compasnaald, en of een kind
+  de kindmodus langer dan twee minuten boeiend vindt.

@@ -53,6 +53,11 @@ export const CATEGORIES = [
     key: 'uitkijk', label: 'Uitkijkpunt', icon: 'landscape', from: 'overpass',
     overpass: '[tourism=viewpoint]',
   },
+  // Alleen beschikbaar als er een opencaching.nl-sleutel is ingevuld; zie
+  // src/okapi.js. Zonder sleutel wordt deze categorie niet aangeboden.
+  {
+    key: 'cache', label: 'Geocache', icon: 'travel_explore', from: 'okapi',
+  },
 ];
 
 export const categoryByKey = (key) => CATEGORIES.find((c) => c.key === key);
