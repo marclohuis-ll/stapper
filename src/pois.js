@@ -131,8 +131,72 @@ export function createHarvester(maplibregl) {
       return [...found.values()];
     },
 
+    /**
+     * Punten óp het padennetwerk, om een rondje aan te knopen als er geen
+     * soorten zijn aangevinkt.
+     *
+     * Waarom niet op POI's ankeren: die liggen bij een parkeerplaats of in een
+     * dorp, dus de router moet er via wegen naartoe. En waarom niet op verzonnen
+     * punten op een ring: die snappen naar de naaste weg-uitloper, waar de router
+     * heen en weer naartoe pendelt. Gemeten rond Twickel, dezelfde afstand:
+     *
+     *   POI-ankers    41% pad, 11–25% dubbel gelopen
+     *   ringankers    22–38% pad, 69–89% dubbel
+     *   padankers     69% pad, 6% dubbel
+     *
+     * Een punt dat al op een bospad ligt hoeft de router niet via asfalt te
+     * bereiken, en dan sluit de lus over paden.
+     */
+    async collectPathAnchors({ lat, lon, radiusM, sample = 6 }) {
+      await firstIdle;
+      const found = new Map();
+
+      for (const centre of viewportGrid([lon, lat], radiusM)) {
+        map.jumpTo({ center: centre, zoom: Z });
+        await settle(map);
+
+        let feats;
+        try { feats = map.querySourceFeatures(SOURCE, { sourceLayer: 'transportation' }); }
+        catch { continue; }
+
+        for (const f of feats) {
+          const p = f.properties || {};
+          // Fietspaden vallen in dit schema óók onder klasse `path`; die willen we
+          // hier niet, want een asfaltfietspad is geen bospad.
+          if (!['path', 'track'].includes(p.class)) continue;
+          if (p.subclass === 'cycleway') continue;
+          if (!f.geometry) continue;
+
+          for (const line of linesOf(f.geometry)) {
+            for (let i = 0; i < line.length; i += sample) {
+              const coord = line[i];
+              const d = distM([lon, lat], coord);
+              if (d > radiusM) continue;
+              // Rasteren op ~40 m, anders houd je duizenden punten over die
+              // allemaal op hetzelfde stukje pad liggen.
+              const key = `${coord[0].toFixed(4)},${coord[1].toFixed(4)}`;
+              if (!found.has(key)) {
+                found.set(key, {
+                  category: null, label: null, name: null, icon: 'place',
+                  coord, distFromStart: d, pad: true,
+                });
+              }
+            }
+          }
+        }
+      }
+      return [...found.values()];
+    },
+
     destroy() { map.remove(); host.remove(); },
   };
+}
+
+/** LineString of MultiLineString naar een lijst lijnen. */
+function linesOf(geometry) {
+  if (geometry.type === 'LineString') return [geometry.coordinates];
+  if (geometry.type === 'MultiLineString') return geometry.coordinates;
+  return [];
 }
 
 /** Middens van de viewports die samen de schijf dekken. In de praktijk één,
