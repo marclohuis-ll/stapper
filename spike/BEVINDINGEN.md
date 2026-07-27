@@ -305,6 +305,51 @@ een paar procent minder bospad.
 
 ---
 
+# Meting 8 — een route zonder eisen
+
+De chips werden een wens in plaats van een voorwaarde. Zonder eisen zijn er geen
+verplichte punten meer, dus waar anker je dan op?
+
+**Punten op een ring werken niet.** Eerst geprobeerd: drie tot vijf verzonnen
+punten op een ring rond het start, die de router naar het naaste pad snapt. De
+afstand klopte prima (4,5 km op een doel van 4,5), maar **69 tot 89% dubbel
+gelopen** — ringpunten landen op dezelfde weg-uitlopers, dus de router pendelt er
+heen en weer naartoe. Meer ringpunten hielpen niet.
+
+**De geoogste punten zónder soort-eis werken wel.** Die liggen per definitie aan
+het netwerk. Gemeten: 5,13 en 5,17 km op een doel van 4,5, en 11 tot 25% dubbel.
+Ringankers blijven alleen het vangnet voor als er helemaal niets te ankeren valt.
+
+## Drie fouten onderweg
+
+**Het aantal hoekpunten mocht niet meebewegen met de ringradius.** Ik liet het
+groeien met `r`, en dan convergeert de afstandsiteratie niet: elke ronde
+veranderde het aantal hoekpunten, dus liep hij alle zes de rondes uit. Uitkomst
+7,5 km op een doel van 4,5. Vast aantal uit de doelafstand: 5,1 km.
+
+**Zes pogingen waren slechter dan drie.** Zonder eisen verschillen de pogingen
+alleen in sectorhoek, en de straf op al gebruikte punten duwt latere pogingen naar
+punten verder weg. Zes pogingen gaven 7,5 km waar twee op 5,1 km uitkwamen — en
+het kostte 14 seconden in plaats van vijf.
+
+**`metaFor` crashte op een anker.** Die doet `categoryByKey(p.category).label`, en
+een ringanker heeft geen soort. De crash kwam ná al het routeerwerk, dus je zag
+veertig seconden lang niets en daarna "het zoeken lukte niet".
+
+## Wat ik niet heb kunnen verifiëren
+
+De oogst zelf. Het Browser-paneel stond verborgen, en dan komen er geen frames:
+MapLibre bereikt `idle` alleen als hij tekent, dus elke oogst liep in zijn timeout
+en gaf nul punten. De generator is daarom getest met een stub-oogster en echte
+BRouter-calls — dat dekt de afstandsconvergentie, de annotatie en de labels, maar
+niet de vorm van routes op écht geoogste punten.
+
+Bijkomend nut: `createHarvester` wachtte op `once(map, 'idle')` **zonder timeout**.
+Dat hing dus oneindig zonder foutmelding. Nu 15 seconden, waarna je een magere
+oogst krijgt in plaats van een app die blijft draaien.
+
+---
+
 # Meting 7 — "ik mis de granulariteit die OSM standaard wel heeft"
 
 De data ontbrak niet. Geteld in de tegels rond Twickel, klasse `path`:

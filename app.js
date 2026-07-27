@@ -307,7 +307,11 @@ views.instellen = () => {
             </button>
           </div>
 
-          <div class="section-head">Onderweg moet er zijn</div>
+          <div class="section-head section-head--rij">
+            <span>Onderweg mag er zijn</span>
+            ${pickedKeys().length
+              ? `<button class="link-knop" data-act="wis-chips">niets, verras me</button>` : ''}
+          </div>
           <div class="chips" role="group" aria-label="Onderweg moet er zijn">
             ${CATEGORIES.filter((c) => c.from !== 'okapi' || state.okapiKey).map((c) => `
               <button class="chip ${c.from !== 'tiles' ? 'chip--net' : ''}"
@@ -317,9 +321,12 @@ views.instellen = () => {
                 ${ico(c.icon)}<span>${esc(c.label)}</span>
               </button>`).join('')}
           </div>
-          <p class="hint-line">Elke aangevinkte soort komt gegarandeerd in de route.
-            Lukt dat niet binnen je afstand, dan krijg je ook kortere rondjes te zien
-            waarin er één ontbreekt.</p>
+          <p class="hint-line">${pickedKeys().length
+            ? `Elke aangevinkte soort komt gegarandeerd in de route. Past dat niet
+               binnen je afstand, dan krijg je ook kortere rondjes waarin er één
+               ontbreekt — of gewoon een mooi rondje zonder eisen.`
+            : `Niets aangevinkt is ook goed: dan zoekt hij simpelweg het mooiste
+               rondje vanaf je startpunt, met zo veel paadjes als er te vinden zijn.`}</p>
 
           ${CONFIG.geocachesAan ? cacheCard() : ''}
         </div>
@@ -327,7 +334,7 @@ views.instellen = () => {
     </div>
 
     <div class="screen__footer">
-      <button class="btn-cta" data-act="zoek" ${pickedKeys().length ? '' : 'disabled'}>Zoek paadjes</button>
+      <button class="btn-cta" data-act="zoek">Zoek paadjes</button>
     </div>
   </div>`;
 };
@@ -1521,6 +1528,8 @@ app.addEventListener('click', (e) => {
       render();
       break;
     }
+
+    case 'wis-chips': state.picked = {}; render(); break;
 
     case 'snel':
       state.km = Number(el.dataset.km);

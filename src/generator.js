@@ -11,9 +11,11 @@
    een lus van 9,4 km, dus lus ≈ 5,9 × ringradius. Vandaar r0 = doel / 6.
    ============================================================================ */
 
-import { bearing, bearingDelta, distM, orderTour, overlapFraction } from './geo.js';
+import {
+  bearing, bearingDelta, destination, distM, orderTour, overlapFraction,
+} from './geo.js';
 import { routeLoop, routeOutAndBack, RouteError } from './router.js';
-import { categoryByKey } from './pois.js';
+import { CATEGORIES, categoryByKey } from './pois.js';
 
 const DETOUR0 = 1.45;           // startschatting: paden zijn langer dan de rechte lijn
 const HARVEST_SLACK = 2.6;      // ruimer oogsten dan r0, want r kan groeien
@@ -49,7 +51,13 @@ export async function generateRoutes({
   const harvestR = ringForTarget(targetM, 3, DETOUR0) * HARVEST_SLACK;
 
   onProgress('oogsten', 'punten in de buurt zoeken');
-  const pois = await harvester.collect({ lat, lon, radiusM: harvestR, keys: chips });
+
+  // Ook zonder eisen oogsten: dan gebruiken we de punten niet als verplichte
+  // ankers, maar wel om achteraf te vertellen waar de route langs komt.
+  const oogstKeys = chips.length
+    ? chips
+    : CATEGORIES.filter((c) => c.from === 'tiles').map((c) => c.key);
+  const pois = await harvester.collect({ lat, lon, radiusM: harvestR, keys: oogstKeys });
 
   let missing = [];
   if (supplement) {
@@ -59,15 +67,12 @@ export async function generateRoutes({
   }
 
   const available = [...new Set(pois.map((p) => p.category))];
-  if (!pois.length) {
-    throw new GenerateError('Geen enkel punt gevonden in de buurt van dit startpunt.');
-  }
 
-  // Aantal stops: één per gevraagde soort die we ook daadwerkelijk gevonden
-  // hebben, met een boven- en ondergrens zodat een rondje van 2 km niet zes
-  // stops krijgt en een van 12 km niet één.
   // Alleen de aangevinkte soorten die we ook echt gevonden hebben. Elke soort
   // hierin komt gegarandeerd in de route — dat is de belofte van de chips.
+  //
+  // Blijft die lijst leeg, dan is dat geen fout: niets aangevinkt of niets van
+  // die soort in de buurt levert gewoon een rondje op ankers rond je startpunt.
   const wanted = chips.filter((c) => available.includes(c)).slice(0, 6);
 
   const candidates = [];
@@ -80,13 +85,13 @@ export async function generateRoutes({
   const attempts = [];
 
   /** Eén ronde kandidaten voor een gegeven set eisen. */
-  const runPass = async (subset, tries) => {
+  const runPass = async (subset, tries, forceerRing = false) => {
     const out = [];
     for (let i = 0; i < tries && out.length < count; i++) {
       onProgress('routeren', `rondje ${candidates.length + out.length + 1} van ${count}`);
       const cand = await buildCandidate({
         start, targetM, wanted: subset, pois, shape,
-        offsetFraction: i / tries, usedByOthers, onProgress,
+        offsetFraction: i / tries, usedByOthers, forceerRing, onProgress,
       });
       if (!cand) { attempts.push({ i, subset: subset.join('+'), reason: 'geen route' }); continue; }
 
@@ -102,15 +107,30 @@ export async function generateRoutes({
       seen.add(fingerprint);
       cand.pois.forEach((p) => usedByOthers.add(p));
       cand.dropped = wanted.filter((w) => !subset.includes(w));
+      cand.vrij = subset.length === 0;      // geen eisen: gewoon een mooi rondje
       out.push(cand);
       attempts.push({ ...info, reason: 'behouden' });
     }
     return out;
   };
 
-  // Meer pogingen dan gevraagde routes: in een gebied waar de punten aan één
-  // kant liggen vallen kandidaten samen, en dan wil je nog een schot hebben.
-  candidates.push(...await runPass(wanted, count * 2));
+  /* Meer pogingen dan gevraagde routes: in een gebied waar de punten aan één kant
+   * liggen vallen kandidaten samen, en dan wil je nog een schot hebben.
+   *
+   * Zonder eisen niet: daar verschillen de pogingen alleen in sectorhoek, en de
+   * straf op al gebruikte punten duwt latere pogingen naar verder weg gelegen
+   * punten. Zes pogingen gaven zo een route van 7,5 km waar twee pogingen op
+   * 5,1 km uitkwamen — en het kostte 14 seconden in plaats van vijf. */
+  candidates.push(...await runPass(wanted, wanted.length ? count * 2 : count));
+
+  /* Geprobeerd en verworpen: als de afstand niet te halen was met echte punten,
+   * een extra ronde met punten op een ring — die kun je immers op maat leggen.
+   * Dat haalde de afstand ook (4,5 km op een doel van 4,5), maar met 69 tot 89%
+   * dubbel gelopen: ringpunten landen op dezelfde weg-uitlopers, dus de router
+   * pendelt. Meer ringpunten hielpen niet. Een lus van 5 km die je voor 85%
+   * tweemaal loopt is geen beter antwoord dan 7,7 km die wél rondgaat, en de app
+   * benoemt beide eerlijk. Ringankers blijven alleen het vangnet voor als er
+   * helemaal niets te ankeren valt. */
 
   // Haalt niets de marge met álle eisen erin, dan is de afstand niet het
   // probleem maar de combinatie. Eén eis laten vallen levert vaak een rondje op
@@ -130,6 +150,14 @@ export async function generateRoutes({
       if (!subset.length) continue;
       onProgress('routeren', `opnieuw zonder ${categoryByKey(drop).label.toLowerCase()}`);
       candidates.push(...await runPass(subset, 2));
+    }
+
+    // Nog steeds niets binnen de marge? Dan helemaal zonder eisen. Een mooi
+    // rondje van de gevraagde lengte is een beter antwoord dan een route van
+    // het dubbele die wél langs alles komt.
+    if (!candidates.some((c) => c.error <= MAX_ERROR)) {
+      onProgress('routeren', 'gewoon een mooi rondje');
+      candidates.push(...await runPass([], 2));
     }
   }
 
@@ -166,6 +194,17 @@ export async function generateRoutes({
   }
   kept.sort(byError);
 
+  // Ankerroutes hebben geen punten die iets betekenen — die ankers waren alleen
+  // hulpmiddel voor de vorm. Vertel daarom achteraf wat er langs de route ligt,
+  // uit dezelfde oogst. Anders krijg je een lijn zonder inhoud.
+  for (const c of kept) {
+    if (!c.vrij) continue;
+    // De gekozen ankers liggen per definitie op de route, dus die zitten hier
+    // ook in — plus wat er verder langs ligt.
+    const langs = langsDeRoute(c.coords, pois);
+    if (langs.length) c.pois = langs;
+  }
+
   return {
     routes: kept.map(decorate(targetM, kept, kidFactor)),
     // Lukt het niet binnen de marge mét alle eisen, dan is dat geen bug maar een
@@ -183,23 +222,31 @@ export async function generateRoutes({
 /* ── Eén kandidaat, met de afstandsiteratie ───────────────────────────────── */
 
 async function buildCandidate({
-  start, targetM, wanted, pois, shape = 'loop', offsetFraction, usedByOthers, onProgress,
+  start, targetM, wanted, pois, shape = 'loop', offsetFraction, usedByOthers,
+  forceerRing = false, onProgress,
 }) {
   const outback = shape === 'outback';
+  // Zonder eisen bepaalt de doelafstand het aantal hoekpunten, en dat staat vast
+  // tijdens het itereren zodat de afstand kan convergeren.
+  const vrijeStops = clamp(Math.round(targetM / 1500), 3, 5);
   let extraStops = 0;
   let detour = DETOUR0;
   // Bij heen-en-terug is de enkele reis de helft, en liggen de punten op een lijn
   // in plaats van op een ring — dus een andere startschatting.
+  // Zonder eisen zijn het ankers op een ring; reken dan met vier hoekpunten.
   let r = outback
     ? (targetM / 2) / DETOUR0
-    : ringForTarget(targetM, Math.max(wanted.length, 2), detour);
+    : ringForTarget(targetM, wanted.length ? Math.max(wanted.length, 2) : vrijeStops, detour);
   let best = null;
   const tried = new Set();
 
   for (let iter = 0; iter < MAX_ITERS; iter++) {
     const picked = outback
       ? pickWedge({ start, pois, r, wanted, offsetFraction, usedByOthers })
-      : pickCovering({ start, pois, r, wanted, extraStops, offsetFraction, usedByOthers });
+      : pickCovering({
+          start, pois, r, wanted, vrijeStops, extraStops, offsetFraction,
+          usedByOthers, forceerRing,
+        });
     if (picked.length < 1 || (!outback && picked.length < 2)) break;
 
     // Bij heen-en-terug loop je naar buiten en dezelfde weg terug, dus de
@@ -306,8 +353,35 @@ function beter(a, b) {
    sector één punt.
    ───────────────────────────────────────────────────────────────────────── */
 
-function pickCovering({ start, pois, r, wanted, extraStops = 0, offsetFraction = 0, usedByOthers }) {
-  const stops = Math.max(wanted.length + extraStops, 2);
+function pickCovering({
+  start, pois, r, wanted, vrijeStops = 4, extraStops = 0, offsetFraction = 0,
+  usedByOthers, forceerRing = false,
+}) {
+  /* Zonder eisen ankeren we op de geoogste punten zónder soort-voorwaarde. Dat
+   * is beter dan verzonnen punten op een ring: die liggen willekeurig in het veld
+   * en de router pendelt er heen en weer naartoe — gemeten 59 tot 80% dubbel
+   * gelopen. Echte punten liggen per definitie aan het netwerk.
+   *
+   * `vrijeStops` komt van buiten en staat vast tijdens het itereren. Eerder liet
+   * ik het meebewegen met de ringradius, en dan convergeert de afstandsiteratie
+   * niet: elke ronde veranderde het aantal hoekpunten, dus liep hij alle zes de
+   * rondes uit en kwam er 7,6 km uit op een doel van 4,5. */
+  const stops = wanted.length
+    ? Math.max(wanted.length + extraStops, 2)
+    : vrijeStops + extraStops;
+
+  /* Punten op een ring in plaats van echte punten. Nodig als er niets te ankeren
+   * valt, maar ook als de echte punten allemaal te ver weg liggen: dan is geen
+   * ringradius klein genoeg om de gevraagde afstand te halen — gemeten leverden
+   * punten op 800 m en verder een lus van 7,7 km op waar 4,5 km gevraagd was.
+   * Een ring kun je wél precies op maat leggen. */
+  if (!wanted.length && (forceerRing || pois.length < 2)) {
+    // Meer hoekpunten dan bij echte punten: ringpunten zijn gratis, en met drie
+    // ervan pendelt de router er heen en weer naartoe — gemeten 69 tot 89% dubbel
+    // gelopen. Meer hoekpunten maken de lus ronder.
+    const ringStops = clamp(Math.round(r / 130), 5, 8);
+    return ringAnchors({ start, r, offsetFraction, stops: ringStops });
+  }
   const sectorSize = 360 / stops;
   const offset = offsetFraction * sectorSize;
   const picked = [];
@@ -358,6 +432,28 @@ function pickCovering({ start, pois, r, wanted, extraStops = 0, offsetFraction =
   }
 
   return fillUp(picked, used, pois, r);
+}
+
+/**
+ * Ankers op een ring, voor een route zonder eisen.
+ *
+ * Vier tot zes punten gelijk verdeeld over de horizon; de router snapt ze naar
+ * het naaste pad. Het aantal groeit met de afstand, want een rondje van 2 km met
+ * zes ankers wordt een sterretje en een van 12 km met drie ankers een driehoek
+ * die nergens langs komt.
+ */
+function ringAnchors({ start, r, offsetFraction = 0, stops = 4 }) {
+  const step = 360 / stops;
+  const offset = offsetFraction * step;
+
+  return Array.from({ length: stops }, (_, i) => {
+    const b = (offset + i * step) % 360;
+    const coord = destination(start, b, r);
+    return {
+      category: null, label: null, name: null, icon: 'place',
+      coord, distFromStart: r, anker: true,
+    };
+  });
 }
 
 /* Heen & terug: alle punten in één windstreek, want je loopt naar buiten en
@@ -426,6 +522,42 @@ function spreidKeuze(lijst, count) {
   return gekozen;
 }
 
+/**
+ * Welke van de geoogste punten liggen langs deze route?
+ *
+ * Voor een rondje zonder eisen: de ankers zeggen niets, dus kijken we achteraf
+ * wat er binnen loopafstand van de lijn ligt. Gespreid over de route, want vijf
+ * bankjes op dezelfde hoek is geen lijst maar een opsomming.
+ */
+function langsDeRoute(coords, pois, { maxM = 130, limit = 6, sample = 4 } = {}) {
+  if (!coords || !pois.length) return [];
+
+  const punten = [];
+  for (let i = 0; i < coords.length; i += sample) punten.push({ c: coords[i], i });
+
+  const vondsten = [];
+  for (const p of pois) {
+    let best = Infinity, bij = 0;
+    for (const q of punten) {
+      const d = distM(p.coord, q.c);
+      if (d < best) { best = d; bij = q.i; }
+    }
+    if (best <= maxM) vondsten.push({ ...p, afstandTotLijn: best, langs: bij });
+  }
+
+  vondsten.sort((a, b) => a.langs - b.langs);
+
+  // Spreiden: minstens een tiende van de route tussen twee vermeldingen.
+  const minGap = coords.length / 10;
+  const uit = [];
+  for (const v of vondsten) {
+    if (uit.length >= limit) break;
+    if (uit.length && v.langs - uit[uit.length - 1].langs < minGap) continue;
+    uit.push(v);
+  }
+  return uit;
+}
+
 /* ── Presentatie ──────────────────────────────────────────────────────────── */
 
 function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
@@ -437,7 +569,8 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
     // Een route waarvoor we een eis hebben laten vallen zegt dat zelf, zodat de
     // gebruiker ziet wat hij inlevert voor de kortere afstand.
     let badge;
-    if (c.dropped && c.dropped.length) {
+    if (c.vrij) badge = 'Gewoon een mooi rondje';
+    else if (c.dropped && c.dropped.length) {
       badge = 'Zonder ' + c.dropped.map((k) => categoryByKey(k).label.toLowerCase()).join(' en ');
     } else if (anyRelaxed) badge = 'Alles erbij';
     else if (i === 0) badge = 'Beste match';
@@ -466,10 +599,13 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
                : (c.overlap ?? 0) > 0.15 ? 'rondje met een stukje terug'
                : 'echt rondje',
       omschrijving: describe(c),
-      pois: c.pois.map((p, n) => ({
-        naam: p.label, icon: p.icon, category: p.category, coord: p.coord,
-        meta: metaFor(p),
-      })),
+      pois: c.pois
+        // Ankers zijn geen bezienswaardigheid; die horen niet in de lijst.
+        .filter((p) => p.category)
+        .map((p) => ({
+          naam: p.label, icon: p.icon, category: p.category, coord: p.coord,
+          meta: metaFor(p),
+        })),
       coords: c.coords,
       error: c.error,
     };
@@ -477,33 +613,60 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
 }
 
 /* Namen komen uit OSM en 26% van de punten heeft er een. Is er een naam, dan
- * gebruiken we die; anders benoemen we de route naar wat er te zien is. */
+ * gebruiken we die; anders benoemen we de route naar wat er te zien is. Ligt er
+ * niets langs de route, dan naar de richting waarin hij gaat. */
 function nameFor(c) {
   const named = c.pois.find((p) => p.name);
   if (named) return `Rondje ${named.name}`;
+
   const counts = tally(c.pois);
   const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  return `Rondje langs ${labelPlural(dominant[0], dominant[1])}`;
+  if (dominant) return `Rondje langs ${labelPlural(dominant[0], dominant[1])}`;
+
+  return `Rondje ${windstreek(c)}`;
 }
 
 function describe(c) {
   const parts = Object.entries(tally(c.pois))
     .sort((a, b) => b[1] - a[1])
     .map(([key, n]) => labelPlural(key, n));
+  if (!parts.length) {
+    return `Een rondje ${windstreek(c)}, gekozen op zo veel paadjes als er te vinden waren.`;
+  }
   const list = parts.length > 1
     ? parts.slice(0, -1).join(', ') + ' en ' + parts[parts.length - 1]
     : parts[0];
   return `Langs ${list}.`;
 }
 
+const WIND = ['naar het noorden', 'naar het noordoosten', 'naar het oosten',
+  'naar het zuidoosten', 'naar het zuiden', 'naar het zuidwesten',
+  'naar het westen', 'naar het noordwesten'];
+
+/** De kant waar de route heen gaat: de peiling naar het verste punt van de lus. */
+function windstreek(c) {
+  const start = c.coords[0];
+  let ver = start, best = 0;
+  for (const p of c.coords) {
+    const d = distM(start, p);
+    if (d > best) { best = d; ver = p; }
+  }
+  return WIND[Math.round(bearing(start, ver) / 45) % 8];
+}
+
 function metaFor(p) {
-  const cat = categoryByKey(p.category);
+  // Een ringanker heeft geen soort: het was alleen een hulppunt voor de vorm.
+  const cat = p.category ? categoryByKey(p.category) : null;
+  if (!cat) return `${Math.round(p.distFromStart)} m van start`;
   return p.name ? cat.label : `${cat.label} · ${Math.round(p.distFromStart)} m van start`;
 }
 
 function tally(pois) {
   const out = {};
-  for (const p of pois) out[p.category] = (out[p.category] || 0) + 1;
+  for (const p of pois) {
+    if (!p.category) continue;          // ankers tellen niet mee als bezienswaardigheid
+    out[p.category] = (out[p.category] || 0) + 1;
+  }
   return out;
 }
 

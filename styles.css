@@ -135,6 +135,14 @@ button { font-family: inherit; color: inherit; }
   color: var(--lime); margin: 26px 0 10px;
 }
 .section-head--tight { margin-bottom: 6px; }
+.section-head--rij { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+
+.link-knop {
+  border: 0; background: transparent; cursor: pointer;
+  font-family: var(--f-body); font-size: 12.5px; font-weight: 500;
+  color: var(--text-66); text-decoration: underline; text-underline-offset: 3px;
+  padding: 0;
+}
 
 .btn-cta {
   width: 100%; height: 62px; border: 0; border-radius: 999px;
