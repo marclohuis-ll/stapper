@@ -511,75 +511,99 @@ niet in de weg zitten — dat vraagt een vinger op een telefoon.
 
 ---
 
-# 10. Geocaches: wat er zonder sleutel al vast te stellen valt
+# 10. Geocaches: waarom het uiteindelijk een bestand werd
 
-`node spike/okapi-probe.mjs` — 31 controles, geen consumer key nodig. De apiref van
-OKAPI is publiek, en daarmee is de helft van het werk te verifiëren die eerder blind
-geschreven was.
+Eerst is dit met OKAPI (opencaching.nl) gebouwd en nagerekend tegen de publieke
+apiref. Die meting was niet voor niets — ze wees uit dat de code klopte — maar de
+uitkomst was alsnog: **de bron is verkeerd.** De dekking in Nederland zit vrijwel
+helemaal op geocaching.com, en opencaching.nl is te dun om een wandeling op te
+bouwen.
 
-## Wat er blind goed geraden was
+## Wat er achter c:geo zit, en waarom dat geen optie is
 
-Alle veldnamen en het locatieformaat klopten al. Wat de apiref bevestigt:
+c:geo gebruikt voor geocaching.com **geen API**. Het logt in met de inloggegevens
+van de gebruiker en leest de website uit. Hun eigen argumenten daarvoor, uit
+discussie #9814:
 
-- `center` is `"lat|lon"` in hele graden met een punt
-- `status` mag `Available | Temporarily unavailable | Archived`
-- `limit` is 1..500 (wij vragen 20)
-- `search/nearest` geeft **alleen codes** terug: `{results: [...], more: bool}`
-- `caches/geocaches` geeft een dictionary **op cache-code**, dus `Object.values()`
-- `location` is óók `"lat|lon"`, dus omdraaien naar `[lon, lat]`
-- `min_auth_level` is 1: de sleutel als losse queryparameter volstaat, geen OAuth
+- via de officiële API krijgt een basic member **3 volledige caches per dag**,
+  premium 16.000; op de website is er geen limiet
+- 60 calls per minuut, en één call van 50 listings duurt ~13 seconden
+- de licentie eist dat de client-credentials alleen bij "de partner" zichtbaar
+  blijven, wat niet kan in een open-sourceproject
 
-## En één ding dat makkelijk fout gaat
+Voor Stapper valt die route dubbel af. De officiële API is partner-gated (aanvragen,
+review van je app) én OAuth met een geheim — en een static PWA op GitHub Pages heeft
+geen plek om een geheim te bewaren; iedereen die de repo opent leest het mee. En de
+c:geo-route zelf vraagt om iemands wachtwoord, wat hier niet gebeurt.
 
-`radius` is in **kilometers**, terwijl afstanden elders in OKAPI in meters staan.
-De apiref zegt het letterlijk: *"Unlike in most other places, this distance is given
-in kilometers instead of meters."* De code deelde al door 1000, maar dit is precies
-het soort ding dat je bij een refactor terugdraait omdat het inconsistent lijkt.
+| bron | verdict |
+| --- | --- |
+| officiële Groundspeak API | partner-gated + geheim niet te verbergen in een static PWA |
+| site uitlezen met eigen login | tegen de voorwaarden, en vraagt om een wachtwoord |
+| OKAPI (opencaching.nl) | werkt, maar te dunne dekking |
+| **GPX-export uit c:geo** | **data waar je zelf legitiem bij mag** |
 
-## CORS en foutmeldingen
+## Waarom een bestand niet de zwakke keuze is
 
-`Access-Control-Allow-Origin: *`, dus dit kan gewoon uit de browser. En een foute
-sleutel geeft 400 met een bruikbare body:
+Het voelt als een omweg, maar het is op drie punten beter dan een API:
 
-```json
-{"error":{"parameter":"consumer_key","whats_wrong_about_it":"Consumer does not exist.",…}}
-```
+- **werkt offline** — de caches staan in IndexedDB voordat je de deur uitgaat, en in
+  het bos is er toch geen bereik
+- **geen sleutel, geen aanvraag** — niets om te configureren of te laten verlopen
+- **het is jóuw selectie** — je kiest in c:geo welke caches leuk zijn voor een kind
+  van zes, in plaats van "alles binnen drie kilometer"
 
-Daarmee kan het verschil tussen *jouw sleutel is fout* en *er is geen netwerk*
-gemaakt worden, en dat verschil is het hele nut van de knop "Werkt de sleutel?".
-Zonder die knop faalt OKAPI stil — met opzet, want een route zonder caches is beter
-dan geen route — maar dan weet je ook nooit of het aan je sleutel ligt of aan een
-gebied zonder caches.
+De prijs is dat je opnieuw exporteert als je in een ander gebied gaat wandelen.
 
-## De naamsvermelding is een verplichting, en dus een XSS-vraag
+## Wat de GPX-lezer moet weerstaan
 
-De Opencaching.NL Data License eist vermelding van auteur én Opencaching.NL. Omdat
-Stapper geen cachebeschrijvingen toont, moet dat via het aparte `attribution_note`.
-Dat veld is HTML met links, van een server die niet de onze is. Twee eisen die
-tegen elkaar in werken:
+38 controles (`spike/gpx-probe.js`) tegen vier bestandsvormen. Wat daarbij bleek:
 
-- onbewerkt in de pagina zetten is een gat
-- de links weghalen mag niet — de voorwaarden verbieden het wijzigen of verbergen
-  van een vermelding
+- **Naamruimte-URI's verschillen.** Een pocket query gebruikt
+  `groundspeak/cache/1/0/1`, c:geo `groundspeak/cache/1/0`. Zoeken op URI mist dan de
+  helft. Alles gaat daarom op `localName` — een cache missen omdat de URI één cijfer
+  anders is, is een cache die je niet gaat vinden.
+- **Hulppunten zien eruit als caches.** Parkeerplaatsen en stages zijn ook `<wpt>`,
+  maar zonder cacheblok en met een type dat met `Waypoint` begint. Zonder filter
+  stuur je een kind naar een parkeerplaats.
+- **Komma als decimaalteken** komt voor in `terrain` (`1,5`). Zonder omzetting wordt
+  dat `NaN` en valt de terreinfilter stil om.
+- **`lat="0" lon="0"`** komt voor bij caches zonder coördinaten. Dat is een punt in de
+  Golf van Guinee, niet een ontbrekende waarde, en moet dus expliciet weg.
 
-Dus opnieuw opbouwen met een witte lijst: `a b i em strong br span`, en `href`
-alleen als het `http(s)` is. Gemeten met `<script>`, `<style>`, `<svg><script>`,
-`<img onerror>`, `onclick`, `javascript:` en `data:`-links: niets voert uit en de
-links blijven staan.
+## De filters zijn een inhoudelijke keuze, niet techniek
 
-Twee dingen die daarbij misgingen en het waard zijn om te onthouden:
+Niet alles wat een cache is, is een bestemming voor een wandeling met een kind:
 
-1. Onbekende elementen uitpakken en de tekst houden is goed voor `<div>`, maar bij
-   `<script>` betekent het dat de broncode als **zichtbare tekst** in de pagina
-   komt. Er is dus een tweede lijst nodig waarvan ook de inhoud verdwijnt.
-2. `tagName` is `'SCRIPT'` voor HTML-elementen maar `'script'` voor elementen
-   binnen `<svg>` of `<math>`. Een lijst in hoofdletters laat `<svg><script>`
-   ongemoeid passeren. Zonder `.toUpperCase()` lekte daar de scripttekst door.
+- **Puzzelcaches** (`Unknown Cache`, `Quiz`, Wherigo) hebben met opzet verkeerde
+  gepubliceerde coördinaten. Dit is de belangrijkste: stil meenemen betekent dat een
+  kind van zes naar een plek loopt waar níets ligt, en dat is het einde van de
+  wandeling.
+- **Virtual, webcam, earthcache**: echte plekken, maar er is geen doosje. "Zoek een
+  doosje" wordt dan een leugen.
+- **Evenementen**: een moment, geen plek.
+- **Terrein 5** betekent per definitie speciale uitrusting — een boot, klimspullen.
+- **Multicaches gaan er wél in.** De gepubliceerde plek is het eerste station, en dat
+  is een echt punt om naartoe te lopen. Dat staat er ook bij in de puntenlijst, zodat
+  je niet denkt dat het doosje daar ligt.
 
-## Wat een echte sleutel nog moet uitwijzen
+Alles wat wegvalt wordt **geteld en gemeld** na het inladen, inclusief onbekende
+soorten. Een nieuwe cachesoort van Groundspeak valt dan op in plaats van stil te
+verdwijnen.
 
-Of een antwoord mét caches goed verwerkt wordt, en hoe `attribution_note` er in het
-echt uitziet — vorm, taal, en of er een link in zit die wij moeten laten staan.
+## Waarom deze probe in de browser draait
+
+XML parseren doe je niet zelf. GPX zit vol naamruimtes, CDATA en entiteiten, en een
+handgemaakte lezer die daar negen van de tien keer goed doorheen komt, verliest
+precies die ene cache die je wilde. `DOMParser` is er al en doet het wél goed — dus
+draait de probe waar DOMParser is, net als die van het sleepgebaar.
+
+## Wat nog niet getest is
+
+Een échte export uit c:geo. Welke velden er precies in zitten, welke
+naamruimteversie, of hulppunten meekomen — dat blijkt bij het eerste echte bestand.
+Loopt daar iets mis, dan zégt de app wat hij overslaat en waarom, dus het is te zien
+in plaats van te raden.
 
 ---
 

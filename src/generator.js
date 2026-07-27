@@ -616,11 +616,8 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
         .map((p) => ({
           naam: p.label, icon: p.icon, category: p.category, coord: p.coord,
           meta: metaFor(p),
-          // Alleen geocaches hebben deze twee, en ze zijn niet optioneel: de
-          // Opencaching.NL-licentie eist de naamsvermelding en de link naar de
-          // cachepagina. Vallen ze hier weg, dan mag de data niet getoond worden.
+          // Alleen een geocache heeft een eigen pagina; daar staat de hint op.
           url: p.url || null,
-          attributie: p.attributie || null,
         })),
       coords: c.coords,
       error: c.error,

@@ -53,10 +53,10 @@ export const CATEGORIES = [
     key: 'uitkijk', label: 'Uitkijkpunt', icon: 'landscape', from: 'overpass',
     overpass: '[tourism=viewpoint]',
   },
-  // Alleen beschikbaar als er een opencaching.nl-sleutel is ingevuld; zie
-  // src/okapi.js. Zonder sleutel wordt deze categorie niet aangeboden.
+  // Komt uit een GPX-bestand dat je zelf inlaadt (zie src/gpx.js) en dus van dit
+  // toestel: geen netwerk nodig. Zonder bestand wordt deze soort niet aangeboden.
   {
-    key: 'cache', label: 'Geocache', icon: 'travel_explore', from: 'okapi',
+    key: 'cache', label: 'Geocache', icon: 'travel_explore', from: 'gpx',
   },
 ];
 

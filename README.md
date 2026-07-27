@@ -206,7 +206,7 @@ En in de console van de app:
 | [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
 | [src/store.js](src/store.js) | IndexedDB: profiel, stickers, foto's, rondjes, wandelingen |
 | [src/offline.js](src/offline.js) | kaarttegels van een route vóór vertrek binnenhalen |
-| [src/okapi.js](src/okapi.js) | geocaches van opencaching.nl — **ongetest**, zie hieronder |
+| [src/gpx.js](src/gpx.js) | geocaches uit een GPX-export van c:geo lezen en filteren |
 | [spike/](spike) | testbanken en meetresultaten |
 | [tools/serve.ps1](tools/serve.ps1) | dev-server (geen node of python op deze machine) |
 | [design/](design) | het geïmporteerde designdocument, ongewijzigd |
@@ -238,61 +238,74 @@ Onderin het stickerboek, onder "Voor de grote mensen":
 - **Oudercode.** Niet ingesteld betekent dat elke vier cijfers de kindmodus
   verlaat; stel je er een in, dan moet die kloppen. Het ontwerp legt geen code
   vast, dus dit is jouw keuze.
-- **opencaching.nl consumer key.** Zonder sleutel bestaat de geocache-categorie
-  niet; met sleutel verschijnt hij als chip. De sleutel staat in IndexedDB en
-  komt dus **niet** in de repo — die is publiek.
+- **Geocaches uit een GPX-bestand.** Zonder bestand bestaat de geocache-categorie
+  niet; laad je er een in, dan verschijnt hij als chip. Zie [Geocaches](#geocaches).
 - **Opslaan en terugzetten** van alles als JSON. Foto's zitten er bewust niet in;
   dan wordt het bestand tientallen megabytes en is het geen back-up meer.
 
 ## Geocaches
 
 Een geocache is een verstopt doosje, en dat is precies waar een speurtocht van een
-kind om vraagt. Ze komen van **opencaching.nl** via OKAPI — de API van
-geocaching.com is partner-gated en scrapen is in strijd met hun voorwaarden, dus
-dit is de open bron die overblijft, met dunnere dekking.
+kind om vraagt. Ze komen **uit een GPX-bestand dat je zelf inlaadt**, niet uit een
+API. Die keuze is niet uit gemak gemaakt:
 
-**Wat jij moet doen:** één consumer key aanvragen op
-[opencaching.nl/okapi/signup.html](https://www.opencaching.nl/okapi/signup.html) —
-naam, e-mailadres, akkoord met de datalicentie. Die komt per e-mail. Vul hem in bij
-*Stickerboek → Voor de grote mensen → Geocaches*, en tik **Werkt de sleutel?**;
-dat doet één echte aanvraag en zegt in gewone woorden wat eruit kwam. Daarna staat
-de chip *Geocache* tussen de andere bij Instellen.
+| bron | waarom niet |
+| --- | --- |
+| officiële Groundspeak API | partner-gated én OAuth met een geheim dat in een publieke static PWA nergens te verbergen is |
+| geocaching.com uitlezen zoals c:geo doet | in strijd met hun voorwaarden, en het zou om jouw wachtwoord vragen |
+| OKAPI (opencaching.nl) | werkte, maar de dekking in Nederland is te dun om een wandeling op te bouwen |
 
-De sleutel staat in IndexedDB op je toestel en **niet in de broncode**: deze repo
-is publiek, en een sleutel die je commit is een sleutel die je weggeeft.
+Een GPX-export is data waar je zelf legitiem een kopie van hebt, en past bovendien
+beter bij deze app: geen sleutel, geen aanvraag, werkt offline, en het is **jouw
+selectie** in plaats van alles binnen drie kilometer.
 
-### Naamsvermelding is geen sierrand
+### Hoe je het gebruikt
 
-De Opencaching.NL Data License eist vermelding van de auteur én van
-Opencaching.NL, en omdat Stapper geen cachebeschrijvingen toont moet dat via het
-aparte `attribution_note`-veld. De cachenaam op het detailscherm linkt naar de
-cachepagina, want dat vragen de voorwaarden ook. Haal je die velden weg, dan mag de
-data niet getoond worden.
+Exporteer in **c:geo** een opgeslagen lijst als GPX (of gebruik een pocket query van
+geocaching.com), en laad dat bestand in bij *Stickerboek → Voor de grote mensen →
+Geocaches uit een GPX-bestand*. Daarna staat de chip *Geocache* tussen de andere bij
+Instellen — en zónder oranje stipje, want deze soort heeft geen netwerk nodig.
 
-Die vermelding is HTML met links erin, van een server die niet de onze is.
-Onbewerkt in de pagina zetten is een gat; de links weghalen mag niet, want de
-voorwaarden verbieden uitdrukkelijk het wijzigen of verbergen van een vermelding.
-Dus wordt hij opnieuw opgebouwd met alleen wat een vermelding nodig heeft —
-`a`, `b`, `i`, `em`, `strong`, `br`, `span`, en `href` alleen als het `http(s)` is.
-Nagerekend met `<script>`, `<style>`, `<svg><script>`, `<img onerror>`, `onclick`,
-`javascript:` en `data:`-links: niets voert uit, links blijven, en de tekst van een
-script wordt niet als zichtbare tekst doorgelaten.
+Opnieuw inladen vult aan; de cachecode is de sleutel, dus dezelfde cache wordt
+bijgewerkt in plaats van verdubbeld. Op het detailscherm linkt een cache naar zijn
+eigen pagina, want daar staat de hint.
 
-### Wat gemeten is, en wat niet
+### Wat er niet in gaat, en waarom dat hardop gezegd wordt
 
+Na het inladen meldt de app wat er is overgeslagen. Dat is geen bijzaak:
+
+- **Puzzelcaches** (`Unknown Cache`, `Quiz`, Wherigo) — hun gepubliceerde
+  coördinaten zijn met opzet niet de vindplaats. Stil meenemen zou betekenen dat een
+  kind van zes naar een plek loopt waar niets ligt.
+- **Caches zonder doosje** (virtual, webcam, earthcache) — echte plekken, maar er is
+  niets te vinden, en "zoek een doosje" wordt dan een leugen.
+- **Evenementen** — een moment, geen plek.
+- **Gearchiveerd of niet beschikbaar** — ligt er niet meer.
+- **Terrein 5** — dat betekent per definitie een boot of klimspullen.
+- **Onbekende soorten** worden geteld in plaats van stil geslikt, zodat een nieuwe
+  cachesoort opvalt in plaats van te verdwijnen.
+
+Een **multicache** gaat er wél in: de gepubliceerde plek is het eerste station, en
+dat is een echt punt om naartoe te lopen. Dat staat er ook bij in de puntenlijst.
+
+### Wat gemeten is
+
+Openen in de app en in de console:
+
+```js
+(await import('/spike/gpx-probe.js')).run()
 ```
-node spike/okapi-probe.mjs
-```
 
-31 controles tegen de publieke apiref van OKAPI, zónder sleutel. Dat de
-argumentnamen bestaan, dat `radius` in kílometers is (en niet in meters zoals de
-rest van OKAPI), dat `location` "lat|lon" is, dat `search/nearest` alleen codes
-teruggeeft en `caches/geocaches` een dictionary op cache-code, dat CORS openstaat,
-en dat een foute sleutel netjes als *fout* herkend wordt in plaats van als storing.
+38 controles tegen vier bestandsvormen: een pocket query van geocaching.com, een
+export uit c:geo (andere naamruimteversie, komma als decimaalteken), een kale GPX
+zonder groundspeak-blok, en rommel. Plus het filteren op afstand.
 
-Wat een echte sleutel nog moet uitwijzen: of een antwoord **mét** caches goed
-verwerkt wordt, en hoe `attribution_note` er in het echt uitziet. Tot die tijd
-faalt de koppeling bewust stil — een route zonder caches is beter dan geen route.
+Dit draait in de browser en niet in node, om één reden: XML parseren doe je niet
+zelf. GPX zit vol naamruimtes, CDATA en entiteiten, en een handgemaakte lezer die
+daar negen van de tien keer goed doorheen komt, verliest precies die ene cache die je
+wilde. Alles gaat op `localName` en niet op naamruimte-URI, want die verschilt per
+GPX-versie — een cache missen omdat de URI één cijfer anders is, is een cache die je
+niet gaat vinden.
 
 ## Installeren
 
@@ -390,10 +403,11 @@ aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
   controles), maar of de lijn lekker aanvoelt, of 250 ms het juiste moment is om
   vast te snappen, of 22 px raakafstand op een duim klopt en of de knoppen onderin
   niet in de weg zitten, is alleen op een telefoon te zien.
-- **De geocaches wachten op één consumer key.** Alles eromheen is nagerekend tegen
-  de publieke apiref (`node spike/okapi-probe.mjs`, 31 controles), maar een
-  antwoord *mét* caches erin heeft nog nooit door de code gelopen. Zie
-  [Geocaches](#geocaches).
+- **De GPX-lezer heeft nog geen échte c:geo-export gezien.** Hij is nagerekend tegen
+  vier zelfgemaakte bestandsvormen (38 controles), maar wat c:geo er in de praktijk
+  precies uitpoept — welke velden, welke naamruimteversie, of hulppunten meekomen —
+  blijkt pas bij het eerste echte bestand. Loopt daar iets mis, dan zegt de app wat
+  hij overslaat en waarom, dus dat is te zien in plaats van te raden.
 - **Eén wandeling lopen.** Vier aannames zijn nog onbeproefd en geen regel code
   kan ze bevestigen: leesbaarheid van de donkere kaart in fel zonlicht,
   GPS-kwaliteit onder een bladerdek, gerammel van de compasnaald, en of een kind

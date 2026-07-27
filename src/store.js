@@ -20,8 +20,9 @@ const DB_NAME = 'stapper';
  * zowel een verse als een bestaande database.
  *   1 → kv, stickers, routes, walks
  *   2 → photos
+ *   3 → caches (geocaches uit een GPX-bestand)
  */
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 export const DEFAULT_CHILD = 'kind-1';
 
 let dbPromise = null;
@@ -47,6 +48,11 @@ function open() {
       if (!db.objectStoreNames.contains('photos')) {
         const p = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
         p.createIndex('childId', 'childId');
+      }
+      if (!db.objectStoreNames.contains('caches')) {
+        // Sleutel is de cachecode (GC1ABCD): opnieuw hetzelfde bestand inladen
+        // overschrijft dan in plaats van te verdubbelen.
+        db.createObjectStore('caches', { keyPath: 'code' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -93,8 +99,8 @@ export const getProfile = () => tx('kv', 'readonly', (s) => wrap(s.get('profile'
 export const setProfile = (profile) => tx('kv', 'readwrite', (s) => s.put(profile, 'profile'));
 
 /* ── Losse instellingen ─────────────────────────────────────────────────
-   Oudercode en de opencaching.nl-sleutel. Bewust hier en niet in de broncode:
-   de repo is publiek, dus een sleutel die je commit is een sleutel die je weggeeft.
+   De oudercode, en wat er over het ingeladen GPX-bestand te melden valt. Bewust
+   hier en niet in de broncode: de repo is publiek.
    ───────────────────────────────────────────────────────────────────────── */
 
 export const getSetting = (key) => tx('kv', 'readonly', (s) => wrap(s.get(`set:${key}`)));
@@ -143,6 +149,23 @@ export const addPhoto = (photo) => tx('photos', 'readwrite', (s) => s.add({
 
 export const listPhotos = () => tx('photos', 'readonly', (s) => wrap(s.getAll()));
 export const deletePhoto = (id) => tx('photos', 'readwrite', (s) => s.delete(id));
+
+/* ── Geocaches uit een GPX-bestand ──────────────────────────────────────────
+   Jouw eigen selectie, geëxporteerd uit c:geo of als pocket query. Ze staan hier
+   en niet achter een API: dan werken ze offline, hoeft er geen sleutel aangevraagd
+   te worden, en zijn het de caches die jíj leuk vond in plaats van alles binnen
+   drie kilometer.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+export async function putCaches(caches) {
+  if (!caches.length) return 0;
+  await tx('caches', 'readwrite', (s) => { for (const c of caches) s.put(c); });
+  return caches.length;
+}
+
+export const listCaches = () => tx('caches', 'readonly', (s) => wrap(s.getAll()));
+export const countCaches = () => tx('caches', 'readonly', (s) => wrap(s.count()));
+export const clearCaches = () => tx('caches', 'readwrite', (s) => s.clear());
 
 /* ── Export en import ───────────────────────────────────────────────────── */
 

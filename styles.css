@@ -1122,14 +1122,28 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 .setting--stil { cursor: default; }
 
 /* ── GEOCACHES ──────────────────────────────────────────────────────────────
-   De naamsvermelding is geen sierrand: zonder haar mag de data van
-   opencaching.nl niet getoond worden. Dus klein en rustig, maar wél leesbaar en
-   met werkende links — verbergen of onleesbaar maken is uitdrukkelijk verboden.
+   Uit een GPX-bestand dat je zelf exporteert uit c:geo, niet uit een API. Zie de
+   toelichting bovenaan src/gpx.js.
    ───────────────────────────────────────────────────────────────────────────── */
-.attributie {
-  margin: 14px 0 0; font-size: 11px; line-height: 1.55; color: var(--text-40);
+.cachebron {
+  margin: 14px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--text-40);
 }
-.attributie a { color: var(--text-66); }
+
+/* Uitslag van het inladen: hoeveel erin gingen, en wat er is overgeslagen. Dat
+   laatste mag niet stil gebeuren — een puzzelcache die je zonder waarschuwing
+   meeneemt, stuurt een kind naar een plek waar niets ligt. */
+.gpx-uitslag {
+  display: flex; gap: 8px; align-items: flex-start;
+  margin: 10px 0 0; padding: 11px 13px; border-radius: 18px;
+  background: rgba(201,242,110,.08); border: 1px solid rgba(201,242,110,.2);
+  font-size: 12.5px; line-height: 1.5; color: var(--text-82);
+}
+.gpx-uitslag .ms { font-size: 17px; color: var(--lime); flex: none; }
+.gpx-uitslag--mis {
+  background: rgba(255,178,107,.09); border-color: rgba(255,178,107,.26);
+  color: var(--orange);
+}
+.gpx-uitslag--mis .ms { color: var(--orange); }
 
 /* Een geocache heeft een eigen pagina, en daar moet naartoe gelinkt worden. */
 .poi__name--link {
@@ -1138,16 +1152,6 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 }
 .poi__name--link:hover { text-decoration: underline; }
 .poi__uit { font-size: 14px !important; color: var(--text-40); }
-
-.sleuteltest { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-.sleuteltest__uit {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12.5px; line-height: 1.4; color: var(--text-66);
-}
-.sleuteltest__uit .ms { font-size: 17px; }
-.sleuteltest__uit.is-goed .ms { color: var(--lime); }
-.sleuteltest__uit.is-mis  { color: var(--orange); }
-.sleuteltest__uit.is-mis .ms { color: var(--orange); }
 
 /* ── Focus ──────────────────────────────────────────────────────────────── */
 :where(button, [href], input, [tabindex]):focus-visible {

@@ -18,7 +18,7 @@ import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
 import { bearing, distM } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
-import { searchCaches, testKey, SIGNUP_URL } from './src/okapi.js';
+import { parseGpx, overslagTekst, cachesInBuurt, GpxError } from './src/gpx.js';
 import { zoekPlaats } from './src/geocode.js';
 import * as store from './src/store.js';
 import * as offline from './src/offline.js';
@@ -29,12 +29,11 @@ const CONFIG = {
   stickerBeloningen: true,
 };
 
-/* Geocaches hebben geen eigen schakelaar. Vul je bij Instellingen een
- * opencaching.nl-sleutel in, dan verschijnt de chip *Geocache* tussen de andere
- * en werkt hij als elke andere soort. Er stond hier eerder een tweede knop naast
- * die hetzelfde beloofde maar niks deed; twee bedieningen voor één ding is erger
- * dan één. */
-const geocachesBeschikbaar = () => !!state.okapiKey;
+/* Geocaches hebben geen eigen schakelaar. Laad je bij Instellingen een
+ * GPX-bestand in, dan verschijnt de chip *Geocache* tussen de andere en werkt hij
+ * als elke andere soort. Er stond hier eerder een tweede knop naast die hetzelfde
+ * beloofde maar niks deed; twee bedieningen voor één ding is erger dan één. */
+const geocachesBeschikbaar = () => state.caches.length > 0;
 
 /* ── Inhoud die nog niet uit data komt ───────────────────────────────────── */
 const WELKOM_PUNTEN = [
@@ -116,10 +115,13 @@ const state = {
 
   /* Instellingen achter het stickerboek. */
   editProfile: false,
-  editSetting: null,          // 'code' | 'okapi' | null
+  editSetting: null,          // 'code' | null
   parentCode: null,
-  okapiKey: null,
-  okapiTest: null,            // null | 'bezig' | {ok, reden}
+
+  /* Geocaches uit een GPX-bestand, uit IndexedDB geladen bij het opstarten. */
+  caches: [],
+  gpxBron: null,              // bestandsnaam van de laatste import
+  gpxMelding: null,           // {ok, tekst} — wat er van de laatste import terechtkwam
 
   /* Op het beginscherm zetten. `installer` is het beforeinstallprompt-event dat
    * Chrome ons geeft; dat mag je maar één keer gebruiken, dus we bewaren het. */
@@ -165,7 +167,7 @@ const uurMin = (mins) => {
  * generator zoekt zich dan zes rondes lam en komt met niets terug. */
 const pickedKeys = () => CATEGORIES
   .filter((c) => state.picked[c.key])
-  .filter((c) => c.from !== 'okapi' || geocachesBeschikbaar())
+  .filter((c) => c.from !== 'gpx' || geocachesBeschikbaar())
   .map((c) => c.key);
 const currentRoute = () => (state.routeId != null ? state.routes[state.routeId] : null);
 
@@ -440,11 +442,14 @@ views.instellen = () => {
               ? `<button class="link-knop" data-act="wis-chips">niets, verras me</button>` : ''}
           </div>
           <div class="chips" role="group" aria-label="Onderweg moet er zijn">
-            ${CATEGORIES.filter((c) => c.from !== 'okapi' || geocachesBeschikbaar()).map((c) => `
-              <button class="chip ${c.from !== 'tiles' ? 'chip--net' : ''}"
+            ${CATEGORIES.filter((c) => c.from !== 'gpx' || geocachesBeschikbaar()).map((c) => `
+              <button class="chip ${c.from === 'overpass' ? 'chip--net' : ''}"
                       data-act="chip" data-chip="${c.key}"
                       aria-pressed="${!!state.picked[c.key]}"
-                      ${c.from !== 'tiles' ? 'title="Heeft netwerk nodig — komt niet uit de kaarttegels"' : ''}>
+                      ${c.from === 'overpass'
+                        ? 'title="Heeft netwerk nodig — komt niet uit de kaarttegels"'
+                        : c.from === 'gpx'
+                          ? 'title="Uit je eigen GPX-bestand — staat op dit toestel"' : ''}>
                 ${ico(c.icon)}<span>${esc(c.label)}</span>
               </button>`).join('')}
           </div>
@@ -670,7 +675,7 @@ views.detail = () => {
           <div class="poi-list">
             ${r.pois.map((p) => poiRegel(p)).join('')}
           </div>
-          ${attributieRegel(r)}
+          ${cacheBronRegel(r)}
         </div>
       </div>
     </div>
@@ -687,9 +692,102 @@ views.detail = () => {
   </div>`;
 };
 
+/* ── Geocaches uit een GPX-bestand ──────────────────────────────────────────
+   Geen API. De dekking in Nederland zit vrijwel helemaal op geocaching.com, en
+   daar kom je alleen bij via een partner-gated API (OAuth met een geheim dat in een
+   publieke static PWA nergens te verbergen is) of door met iemands inloggegevens de
+   site uit te lezen. Het eerste kan niet, het tweede doen we niet.
+
+   Een GPX-export uit c:geo is data waar je zelf legitiem bij mag, en past beter bij
+   deze app: geen sleutel, werkt offline, en het is jóuw selectie in plaats van alles
+   binnen drie kilometer.
+   ───────────────────────────────────────────────────────────────────────────── */
+function gpxRegel() {
+  const n = state.caches.length;
+  const m = state.gpxMelding;
+
+  return `
+  <button class="setting" data-act="gpx-kies">
+    ${ico('travel_explore')}
+    <span class="setting__text">
+      <span class="setting__title">Geocaches uit een GPX-bestand</span>
+      <span class="setting__sub">${n
+        ? `${n} ${n === 1 ? 'cache' : 'caches'} klaar${state.gpxBron ? ` — ${esc(state.gpxBron)}` : ''}`
+        : 'nog niets ingeladen — de speurtocht staat uit'}</span>
+    </span>
+    ${ico('chevron_right', 'setting__chev')}
+  </button>
+  <input type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml"
+         class="verborgen-input" data-act="gpx-file" aria-hidden="true" tabindex="-1">
+
+  ${m ? `<p class="gpx-uitslag ${m.ok ? '' : 'gpx-uitslag--mis'}">
+    ${ico(m.ok ? 'check_circle' : 'error')}<span>${esc(m.tekst)}</span></p>` : ''}
+
+  <p class="hint-line">Exporteer in c:geo een opgeslagen lijst als GPX, of gebruik een
+    pocket query, en laad dat bestand hier in. De caches blijven op dit toestel en
+    werken zonder bereik. Opnieuw inladen vult aan; dezelfde cache wordt bijgewerkt.
+    ${n ? `<button class="link-knop" data-act="gpx-wis">Alles wissen</button>` : ''}</p>`;
+}
+
+/**
+ * Bestand inlezen en wegzetten.
+ *
+ * Wat er wordt overgeslagen wordt hardop gezegd. Een puzzelcache heeft met opzet
+ * verkeerde coördinaten, en stil meenemen zou betekenen dat een kind van zes naar
+ * een plek loopt waar niets ligt — dat is erger dan een cache minder.
+ */
+async function laadGpx(file) {
+  state.gpxMelding = null;
+  try {
+    const xml = await file.text();
+    const { caches, overgeslagen, gevonden } = parseGpx(xml, { bron: file.name });
+
+    if (!caches.length) {
+      const weg = overslagTekst(overgeslagen);
+      state.gpxMelding = { ok: false, tekst: weg
+        ? `Niets bruikbaars: ${weg}.`
+        : `Geen caches gevonden in dit bestand (${gevonden} punten gelezen).` };
+      render();
+      return;
+    }
+
+    await store.putCaches(caches);
+    state.caches = await store.listCaches();
+    state.gpxBron = file.name;
+    await store.setSetting('gpxBron', file.name);
+
+    const weg = overslagTekst(overgeslagen);
+    state.gpxMelding = {
+      ok: true,
+      tekst: `${caches.length} ${caches.length === 1 ? 'cache' : 'caches'} ingeladen` +
+             (weg ? `. Overgeslagen: ${weg}.` : '.'),
+    };
+  } catch (e) {
+    console.warn('gpx inladen mislukt:', e.message);
+    state.gpxMelding = {
+      ok: false,
+      tekst: e instanceof GpxError ? e.message : 'Dit bestand kon niet gelezen worden.',
+    };
+  }
+  render();
+}
+
+async function wisCaches() {
+  try {
+    await store.clearCaches();
+    await store.setSetting('gpxBron', null);
+  } catch (e) {
+    console.warn('caches wissen mislukt:', e.message);
+  }
+  state.caches = [];
+  state.gpxBron = null;
+  state.gpxMelding = null;
+  render();
+}
+
 /** Eén punt onderweg. Heeft het een eigen pagina — bij een geocache is dat zo —
- *  dan is de naam een link daarheen; de voorwaarden van opencaching.nl vragen daar
- *  uitdrukkelijk om. */
+ *  dan is de naam een link daarheen. Bij een geocache staat op die pagina wat je
+ *  onderweg wil weten: de hint, de laatste logs, of hij nog te vinden is. */
 function poiRegel(p) {
   const naam = p.url
     ? `<a class="poi__name poi__name--link" href="${esc(p.url)}"
@@ -706,19 +804,12 @@ function poiRegel(p) {
     </div>`;
 }
 
-/**
- * Naamsvermelding voor de geocaches in deze route.
- *
- * Dit is geen nette geste maar de voorwaarde waaronder we de data mogen tonen: de
- * Opencaching.NL Data License eist vermelding van de auteur én van Opencaching.NL,
- * en omdat wij geen cachebeschrijvingen laten zien moet dat via het aparte
- * `attribution_note`-veld. De HTML is in src/okapi.js teruggebracht tot tekst en
- * links — links weghalen mag niet, die vermelding is juist het punt.
- */
-function attributieRegel(r) {
-  const noten = [...new Set((r.pois || []).map((p) => p.attributie).filter(Boolean))];
-  if (!noten.length) return '';
-  return `<p class="attributie">${noten.join(' ')}</p>`;
+/** Waar de geocaches in deze route vandaan komen. Kort, maar het hoort erbij:
+ *  over een half jaar weet je niet meer welk bestand je hebt ingeladen. */
+function cacheBronRegel(r) {
+  if (!(r.pois || []).some((p) => p.category === 'cache')) return '';
+  return `<p class="cachebron">Geocaches uit je eigen GPX-bestand${
+    state.gpxBron ? ` (${esc(state.gpxBron)})` : ''}. Tik op een cache voor de pagina met de hint.</p>`;
 }
 
 /* ── Route aanpassen ──────────────────────────────────────────────────────
@@ -1047,36 +1138,7 @@ views.profiel = () => {
             ${ico('chevron_right', 'setting__chev')}
           </button>`}
 
-          ${state.editSetting === 'okapi' ? `
-            ${settingForm({
-              key: 'okapi', label: 'opencaching.nl consumer key', value: state.okapiKey || '',
-              type: 'text', hint: 'Blijft op dit toestel; hij komt niet in de repo.',
-            })}
-            <p class="hint-line">Nog geen sleutel? Vraag er een aan op
-              <a href="${SIGNUP_URL}" target="_blank" rel="noopener noreferrer">opencaching.nl</a>
-              — je vult een naam en je e-mailadres in en gaat akkoord met de
-              datalicentie. De sleutel komt per e-mail.</p>` : `
-          <button class="setting" data-act="set-okapi">
-            ${ico('travel_explore')}
-            <span class="setting__text">
-              <span class="setting__title">Geocaches (opencaching.nl)</span>
-              <span class="setting__sub">${state.okapiKey
-                ? 'sleutel ingevuld — de chip Geocache staat bij Instellen'
-                : 'geen sleutel — speurtocht staat uit'}</span>
-            </span>
-            ${ico('chevron_right', 'setting__chev')}
-          </button>
-          ${state.okapiKey ? `
-            <div class="sleuteltest">
-              <button class="btn-ghost btn-ghost--sm" data-act="test-okapi"
-                      ${state.okapiTest === 'bezig' ? 'disabled' : ''}>
-                ${state.okapiTest === 'bezig' ? 'Even proberen…' : 'Werkt de sleutel?'}
-              </button>
-              ${state.okapiTest && state.okapiTest !== 'bezig' ? `
-                <span class="sleuteltest__uit ${state.okapiTest.ok ? 'is-goed' : 'is-mis'}">
-                  ${ico(state.okapiTest.ok ? 'check_circle' : 'error')}${esc(state.okapiTest.reden)}
-                </span>` : ''}
-            </div>` : ''}`}
+          ${gpxRegel()}
 
           ${installRegel()}
 
@@ -1391,9 +1453,10 @@ function refreshIfShowing(...screens) {
 async function laadOpslag() {
   try {
     store.requestPersistence();          // niet op wachten; het is een verzoek
-    const [profiel, stickers, saved, walks, photos, code, okapi] = await Promise.all([
+    const [profiel, stickers, saved, walks, photos, code, gpxBron, caches] = await Promise.all([
       store.getProfile(), store.listStickers(), store.listSavedRoutes(), store.listWalks(),
-      store.listPhotos(), store.getSetting('parentCode'), store.getSetting('okapiKey'),
+      store.listPhotos(), store.getSetting('parentCode'), store.getSetting('gpxBron'),
+      store.listCaches(),
     ]);
     state.photos = photos;
     // Alleen overnemen als er echt een profiel staat; anders het huidige bewaren.
@@ -1403,7 +1466,8 @@ async function laadOpslag() {
     state.saved = saved;
     state.walks = walks;
     state.parentCode = code || null;
-    state.okapiKey = okapi || null;
+    state.gpxBron = gpxBron || null;
+    state.caches = caches || [];
     render();
   } catch (e) {
     // Zonder opslag werkt de app verder; alleen het boek onthoudt niets.
@@ -1428,20 +1492,6 @@ async function bewaarRoute(button) {
   const nu = !aanwezig;
   button.setAttribute('aria-pressed', String(nu));
   button.querySelector('.ms').textContent = nu ? 'bookmark_added' : 'bookmark';
-}
-
-/**
- * Werkt de sleutel? Dit moet je kunnen weten in de keuken, niet pas in het bos.
- *
- * Zonder deze knop faalt OKAPI stil — dat is met opzet, want een route zonder
- * caches is beter dan geen route — maar dan weet je ook nooit of het aan je
- * sleutel ligt of aan een gebied zonder caches.
- */
-async function probeerSleutel() {
-  state.okapiTest = 'bezig';
-  render();
-  state.okapiTest = await testKey(state.okapiKey);
-  refreshIfShowing('profiel');
 }
 
 async function exportBestand() {
@@ -1808,30 +1858,23 @@ async function locate() {
 
 /**
  * Alles wat niet uit de kaarttegels komt: Overpass voor picknicktafels en
- * uitkijkpunten, OKAPI voor geocaches. Beide optioneel — valt er een uit, dan
- * krijg je een route met één soort minder in plaats van geen route.
+ * uitkijkpunten, en het ingeladen GPX-bestand voor geocaches. Beide optioneel —
+ * valt er een weg, dan krijg je een route met één soort minder in plaats van geen
+ * route.
  */
 async function aanvullen({ lat, lon, radiusM, keys }) {
-  const [overpass, caches] = await Promise.all([
-    supplementFromOverpass({ lat, lon, radiusM, keys }),
-    keys.includes('cache') && state.okapiKey
-      ? searchCaches({ lat, lon, radiusM, key: state.okapiKey })
-      : Promise.resolve([]),
-  ]);
+  const overpass = await supplementFromOverpass({ lat, lon, radiusM, keys });
 
-  const cachePois = caches.map((c) => ({
-    category: 'cache', label: c.naam, name: c.naam, icon: 'travel_explore',
-    coord: c.coord,
-    soort: c.soort,
-    // Verplicht mee: zonder naamsvermelding en link mag deze data niet getoond.
-    url: c.url, attributie: c.attributie,
-    distFromStart: Math.hypot(
-      (c.coord[0] - lon) * 111320 * Math.cos(lat * Math.PI / 180),
-      (c.coord[1] - lat) * 111320),
-  }));
+  // Geocaches staan al op het toestel, dus dit is geen netwerkverkeer maar een
+  // filter op afstand. Vandaar ook geen reden om het parallel aan Overpass te doen.
+  const cachePois = keys.includes('cache')
+    ? cachesInBuurt(state.caches, { lat, lon, radiusM })
+    : [];
 
   const failed = [...overpass.failed];
-  if (keys.includes('cache') && state.okapiKey && !cachePois.length) failed.push('cache');
+  // Wel caches ingeladen maar geen enkele in de buurt: dat is een lege categorie
+  // en dat mag de generator weten, zodat hij het benoemt in plaats van te zwoegen.
+  if (keys.includes('cache') && !cachePois.length) failed.push('cache');
 
   return { pois: [...overpass.pois, ...cachePois], failed };
 }
@@ -1984,8 +2027,8 @@ app.addEventListener('click', (e) => {
     case 'edit-profiel':   state.editProfile = true;  render(); break;
     case 'cancel-profiel': state.editProfile = false; render(); break;
     case 'set-code':       state.editSetting = 'code';  render(); break;
-    case 'set-okapi':      state.editSetting = 'okapi'; render(); break;
-    case 'test-okapi':     probeerSleutel(); break;
+    case 'gpx-kies': app.querySelector('[data-act="gpx-file"]')?.click(); break;
+    case 'gpx-wis': wisCaches(); break;
 
     case 'installeer':     installeer(); break;
     case 'install-weg':    state.installKaartWeg = true; render(); break;
@@ -2063,11 +2106,6 @@ app.addEventListener('submit', (e) => {
       const code = raw.replace(/\D/g, '').slice(0, 4);
       state.parentCode = code.length === 4 ? code : null;
       store.setSetting('parentCode', state.parentCode);
-    } else if (key === 'okapi') {
-      state.okapiKey = raw || null;
-      store.setSetting('okapiKey', state.okapiKey);
-      // Een nieuwe sleutel maakt de vorige uitslag onwaar.
-      state.okapiTest = null;
     }
     state.editSetting = null;
     render();
@@ -2079,6 +2117,14 @@ app.addEventListener('change', async (e) => {
   if (foto && foto.files && foto.files[0]) {
     await bewaarFoto(foto.files[0]);
     foto.value = '';
+    return;
+  }
+
+  /* Geocaches uit een GPX-export van c:geo. */
+  const gpx = e.target.closest('[data-act="gpx-file"]');
+  if (gpx && gpx.files && gpx.files[0]) {
+    await laadGpx(gpx.files[0]);
+    gpx.value = '';                    // hetzelfde bestand nog eens kunnen kiezen
     return;
   }
 

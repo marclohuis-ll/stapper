@@ -12,7 +12,7 @@
    keer openen.
    ============================================================================ */
 
-const VERSION = 'stapper-v4';
+const VERSION = 'stapper-v5';
 
 /* Losse cache, gevuld door src/offline.js wanneer je een route offline meeneemt.
  * Apart gehouden zodat het opruimen van een appversie je gedownloade tegels niet
@@ -43,7 +43,7 @@ const SHELL = [
   'src/simulate.js',
   'src/store.js',
   'src/offline.js',
-  'src/okapi.js',
+  'src/gpx.js',
   'src/geocode.js',
   /* Alle iconen uit het manifest: de installatiedialoog en het beginscherm
      moeten er ook bij kunnen als er geen bereik is. */
