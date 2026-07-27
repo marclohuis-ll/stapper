@@ -82,7 +82,11 @@ export function createHarvester(maplibregl) {
     attributionControl: false, interactive: false, fadeDuration: 0,
   });
 
-  const firstIdle = once(map, 'idle');
+  /* Met timeout. Zonder wacht `collect()` oneindig als 'idle' nooit komt — dat
+   * gebeurt bijvoorbeeld als de browser geen WebGL-context meer wil geven, en
+   * dan hangt het zoeken zonder foutmelding. Liever een magere oogst dan een
+   * app die blijft draaien terwijl je op een parkeerplaats staat. */
+  const firstIdle = once(map, 'idle', 15000);
 
   return {
     /** Alle POI's van de gevraagde categorieën binnen radiusM. */

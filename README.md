@@ -117,6 +117,17 @@ Standaard je GPS-positie, maar via *Startpunt* op het instelscherm kun je een pl
 zoeken op naam (Nominatim) of de kaart onder het kruis schuiven. Zo maak je thuis
 een route voor morgen.
 
+### Niets aanvinken mag ook
+
+De chips zijn een wens, geen voorwaarde. Vink je niets aan, dan zoekt de app het
+mooiste rondje vanaf je startpunt: hij ankert dan op de geoogste punten zónder
+soort-eis, en vertelt achteraf waar de route langs komt. Er staat *"niets, verras
+me"* naast de chips om ze in één tik te wissen.
+
+Lukt het mét eisen niet binnen je afstand, dan komt er als laatste ronde ook een
+rondje zonder eisen bij — een mooie lus van de gevraagde lengte is een beter
+antwoord dan een route van het dubbele die wél langs alles komt.
+
 Elke aangevinkte soort komt **gegarandeerd** in de route. Past dat niet binnen de
 gevraagde afstand, dan laat de app liever een eis vieren dan te liegen over de
 afstand: je krijgt kortere rondjes met een badge als "Zonder speeltuin", náást het
