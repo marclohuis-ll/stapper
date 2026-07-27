@@ -38,13 +38,17 @@ function ensure(maplibregl) {
       id: 'route-shadow', type: 'line', source: SRC,
       filter: ['==', ['geometry-type'], 'LineString'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#0A1512', 'line-width': 9, 'line-opacity': .7 },
+      // Donkere baan onder de route. Breed genoeg om de route los te maken van
+      // de gestippelde paadjes eronder, die sinds de kaartlabels ook lime zijn.
+      paint: { 'line-color': '#0A1512', 'line-width': 13, 'line-opacity': .8 },
     });
     map.addLayer({
       id: 'route-line', type: 'line', source: SRC,
       filter: ['==', ['geometry-type'], 'LineString'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-width': 4.5, 'line-gradient': gradientFor(null) },
+      // Doorlopend en fors: het onderscheid met de gestippelde paadjes zit in
+      // breedte en in wel/niet onderbroken, niet in kleur.
+      paint: { 'line-width': 6.5, 'line-gradient': gradientFor(null) },
     });
     map.addLayer({
       id: 'route-poi', type: 'circle', source: SRC,

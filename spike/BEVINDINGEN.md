@@ -303,6 +303,43 @@ rondste — en zet beide getallen op het kaartje. Rondje-zijn weegt zwaarder dan
 pad-aandeel bij het rangschikken, want een derde dubbel lopen valt meer op dan
 een paar procent minder bospad.
 
+---
+
+# Meting 7 — "ik mis de granulariteit die OSM standaard wel heeft"
+
+De data ontbrak niet. Geteld in de tegels rond Twickel, klasse `path`:
+
+| zoom | features klasse `path` | totaal `transportation` |
+|---|---|---|
+| 12 | 580 | 3.483 |
+| 13 | 1.434 | 7.518 |
+| 14 | 319 | 1.053 |
+
+De paden zaten er dus in, en mijn stijl tekende ze ook. Alleen: **0,8 px lime op
+z12, bovenop een 2,4 px dónkere casing.** Die casing was breder dan de lijn zelf,
+dus hij maakte het pad juist onzichtbaar tegen de donkere achtergrond in plaats
+van het los te tillen.
+
+## En een fout die niemand ziet maar die wel misleidt
+
+In het OpenMapTiles-schema valt **`cycleway` onder klasse `path`** — het is er
+zelfs de grootste subklasse van: 702 van de 1.434 op z13. Mijn stijl tekende dus
+fietspaden als bospaadje, en het pad-aandeel uit meting 5 telde ze mee als "pad".
+
+Nu drie soorten apart, want `line-dasharray` kan niet data-gestuurd:
+
+- **voetpad** (`path` zonder subklasse `cycleway`) — lime, kort gestippeld
+- **zandpad** (`track`) — olijf, lang gestippeld
+- **fietspad** (subklasse `cycleway`) — koel teal, doorlopend
+
+Breedtes van 1,8 naar 5 px in plaats van 0,8 naar 3,4, en de casing eronder.
+
+## Gevolg voor de routelijn
+
+Met een kaart vol lime streepjes kan de lime routelijn wegvallen. Die is daarom
+6,5 px doorlopend met een donkere baan van 13 px eronder: het onderscheid zit nu
+in breedte en in wel/niet onderbroken, niet in kleur.
+
 ## Wat er op de kaart mag
 
 De `poi`-laag ongefilterd tekenen maakt de kaart onleesbaar: in een schijf van 3 km

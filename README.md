@@ -97,6 +97,16 @@ Straatnamen vanaf z14, langs de lijn geplaatst. Punten onderweg vanaf z14 als
 mint stip, met hun naam vanaf z15 — voor zover OSM er een heeft, en dat is bij
 ongeveer een kwart het geval.
 
+Paden in drie soorten, elk herkenbaar: **voetpad** lime en kort gestippeld,
+**zandpad** olijf en lang gestippeld, **fietspad** koel teal en doorlopend. Dat
+onderscheid is nodig omdat `cycleway` in het OpenMapTiles-schema ónder klasse
+`path` valt — het is er zelfs de grootste subklasse van — dus zonder splitsing
+teken je vooral fietspaden en noem je ze paadjes.
+
+De routelijn is 6,5 px doorlopend met een donkere baan eronder. Het verschil met
+de paadjes zit in breedte en in wel/niet onderbroken, niet in kleur: op een kaart
+vol lime streepjes zou een lime lijn anders wegvallen.
+
 De `poi`-laag is streng gefilterd. Ongefilterd bestaat hij vooral uit ruis: in een
 schijf van 3 km stonden er 174 parkeerplaatsen, 167 hekken, 146 bollards en 101
 afvalbakken in. Er is dus een witte lijst van wat je onderweg wíl zien.
