@@ -19,10 +19,15 @@ const C = {
   water:     '#12363A',
   waterLine: '#1E5A57',
   building:  '#182720',
-  road:      '#24382F',
-  roadBig:   '#2E4438',
-  path:      '#7FA24E',   // gedempte lime — een pad moet opvallen, niet schreeuwen
-  pathCase:  '#0F211B',
+  road:      '#2B4238',
+  roadBig:   '#36503F',
+  /* Drie soorten paadje, elk herkenbaar. Alle drie lichter dan de wegen, want
+   * hier gaat de app over — maar donkerder dan de lime routelijn, anders vecht
+   * de kaart met de route die je moet volgen. */
+  path:      '#A8CE63',   // bos- en voetpad
+  track:     '#95A45E',   // zandpad / onverharde weg
+  cycle:     '#5C9A92',   // fietspad, koeler zodat je het verschil ziet
+  pathCase:  '#0D1C17',
   text:      '#EAF3EA',
   textHalo:  '#0A1512',
   textDim:   'rgba(234,243,234,.62)',
@@ -117,28 +122,60 @@ export function darkStyle() {
         },
       },
 
-      /* ── paden: het onderwerp van de app, dus met een casing zodat ze
-             ook boven donker bos leesbaar blijven ─────────────────────── */
+      /* ── paden ──────────────────────────────────────────────────────────
+         Het onderwerp van de app, dus ze moeten opvallen. Eerdere versie tekende
+         0,8 px lime op z12 bovenop een 2,4 px dónkere casing — die casing maakte
+         het pad juist onzichtbaar tegen de donkere achtergrond.
+
+         Drie soorten apart, want ze zijn niet hetzelfde en `line-dasharray` kan
+         niet data-gestuurd: een bospad is geen fietspad. In het OpenMapTiles-
+         schema valt `cycleway` onder klasse `path` — het is er zelfs de grootste
+         subklasse van (702 van de 1434 op z13), dus zonder onderscheid teken je
+         vooral fietspaden en noem je ze paadjes. */
       {
-        id: 'path-case', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
+        id: 'pad-case', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
         minzoom: 12,
         filter: ['in', ['get', 'class'], ['literal', ['path', 'track']]],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': C.pathCase,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.4, 17, 8],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.2, 17, 9],
         },
       },
       {
-        id: 'path', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
+        id: 'pad-fiets', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
         minzoom: 12,
-        filter: ['in', ['get', 'class'], ['literal', ['path', 'track']]],
+        filter: ['all',
+          ['in', ['get', 'class'], ['literal', ['path']]],
+          ['==', ['get', 'subclass'], 'cycleway']],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
+          'line-color': C.cycle,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 17, 3.4],
+        },
+      },
+      {
+        id: 'pad-track', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
+        minzoom: 12,
+        filter: ['==', ['get', 'class'], 'track'],
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': C.track,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.6, 17, 5],
+          'line-dasharray': [4, 1.4],
+        },
+      },
+      {
+        id: 'pad-voet', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation',
+        minzoom: 12,
+        filter: ['all',
+          ['==', ['get', 'class'], 'path'],
+          ['!=', ['get', 'subclass'], 'cycleway']],
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
           'line-color': C.path,
-          'line-opacity': .85,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.8, 17, 3.4],
-          'line-dasharray': [3, 1.6],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.8, 17, 5],
+          'line-dasharray': [2.2, 1.2],
         },
       },
 
