@@ -616,6 +616,11 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
         .map((p) => ({
           naam: p.label, icon: p.icon, category: p.category, coord: p.coord,
           meta: metaFor(p),
+          // Alleen geocaches hebben deze twee, en ze zijn niet optioneel: de
+          // Opencaching.NL-licentie eist de naamsvermelding en de link naar de
+          // cachepagina. Vallen ze hier weg, dan mag de data niet getoond worden.
+          url: p.url || null,
+          attributie: p.attributie || null,
         })),
       coords: c.coords,
       error: c.error,
@@ -669,7 +674,9 @@ function metaFor(p) {
   // Een ringanker heeft geen soort: het was alleen een hulppunt voor de vorm.
   const cat = p.category ? categoryByKey(p.category) : null;
   if (!cat) return `${Math.round(p.distFromStart)} m van start`;
-  return p.name ? cat.label : `${cat.label} · ${Math.round(p.distFromStart)} m van start`;
+  // Een geocache heeft een eigen soort, en "multicache" zegt meer dan "Geocache".
+  const wat = p.soort || cat.label;
+  return p.name && !p.soort ? wat : `${wat} · ${Math.round(p.distFromStart)} m van start`;
 }
 
 function tally(pois) {

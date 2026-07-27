@@ -71,4 +71,7 @@ New-Icon -Size 192 -Path (Join-Path $out 'icon-192.png')
 New-Icon -Size 512 -Path (Join-Path $out 'icon-512.png')
 New-Icon -Size 180 -Path (Join-Path $out 'apple-touch-icon.png')
 # Maskable: vol vlak en meer lucht rond het motief, want Android snijdt eruit.
+# Ook op 192: Android kiest per beeldpuntdichtheid en schaalt 512 → 192 zichtbaar
+# zachter dan een icoon dat op maat getekend is.
 New-Icon -Size 512 -Path (Join-Path $out 'icon-512-maskable.png') -Inset 0.30 -Radius 0.5
+New-Icon -Size 192 -Path (Join-Path $out 'icon-192-maskable.png') -Inset 0.30 -Radius 0.5

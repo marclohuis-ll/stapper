@@ -244,6 +244,81 @@ Onderin het stickerboek, onder "Voor de grote mensen":
 - **Opslaan en terugzetten** van alles als JSON. Foto's zitten er bewust niet in;
   dan wordt het bestand tientallen megabytes en is het geen back-up meer.
 
+## Geocaches
+
+Een geocache is een verstopt doosje, en dat is precies waar een speurtocht van een
+kind om vraagt. Ze komen van **opencaching.nl** via OKAPI — de API van
+geocaching.com is partner-gated en scrapen is in strijd met hun voorwaarden, dus
+dit is de open bron die overblijft, met dunnere dekking.
+
+**Wat jij moet doen:** één consumer key aanvragen op
+[opencaching.nl/okapi/signup.html](https://www.opencaching.nl/okapi/signup.html) —
+naam, e-mailadres, akkoord met de datalicentie. Die komt per e-mail. Vul hem in bij
+*Stickerboek → Voor de grote mensen → Geocaches*, en tik **Werkt de sleutel?**;
+dat doet één echte aanvraag en zegt in gewone woorden wat eruit kwam. Daarna staat
+de chip *Geocache* tussen de andere bij Instellen.
+
+De sleutel staat in IndexedDB op je toestel en **niet in de broncode**: deze repo
+is publiek, en een sleutel die je commit is een sleutel die je weggeeft.
+
+### Naamsvermelding is geen sierrand
+
+De Opencaching.NL Data License eist vermelding van de auteur én van
+Opencaching.NL, en omdat Stapper geen cachebeschrijvingen toont moet dat via het
+aparte `attribution_note`-veld. De cachenaam op het detailscherm linkt naar de
+cachepagina, want dat vragen de voorwaarden ook. Haal je die velden weg, dan mag de
+data niet getoond worden.
+
+Die vermelding is HTML met links erin, van een server die niet de onze is.
+Onbewerkt in de pagina zetten is een gat; de links weghalen mag niet, want de
+voorwaarden verbieden uitdrukkelijk het wijzigen of verbergen van een vermelding.
+Dus wordt hij opnieuw opgebouwd met alleen wat een vermelding nodig heeft —
+`a`, `b`, `i`, `em`, `strong`, `br`, `span`, en `href` alleen als het `http(s)` is.
+Nagerekend met `<script>`, `<style>`, `<svg><script>`, `<img onerror>`, `onclick`,
+`javascript:` en `data:`-links: niets voert uit, links blijven, en de tekst van een
+script wordt niet als zichtbare tekst doorgelaten.
+
+### Wat gemeten is, en wat niet
+
+```
+node spike/okapi-probe.mjs
+```
+
+31 controles tegen de publieke apiref van OKAPI, zónder sleutel. Dat de
+argumentnamen bestaan, dat `radius` in kílometers is (en niet in meters zoals de
+rest van OKAPI), dat `location` "lat|lon" is, dat `search/nearest` alleen codes
+teruggeeft en `caches/geocaches` een dictionary op cache-code, dat CORS openstaat,
+en dat een foute sleutel netjes als *fout* herkend wordt in plaats van als storing.
+
+Wat een echte sleutel nog moet uitwijzen: of een antwoord **mét** caches goed
+verwerkt wordt, en hoe `attribution_note` er in het echt uitziet. Tot die tijd
+faalt de koppeling bewust stil — een route zonder caches is beter dan geen route.
+
+## Installeren
+
+Stapper is een PWA: op het beginscherm zetten geeft een schermvullende app zonder
+adresbalk, met de eigen offline kaart. Dat kon altijd al via het browsermenu, maar
+daar gaat niemand zoeken — dus vraagt de app het nu zelf, met een wegtikbare kaart
+op het beginscherm en een regel bij *Voor de grote mensen*.
+
+Drie gevallen, en ze verschillen echt:
+
+| | wat je krijgt |
+| --- | --- |
+| Chrome, Edge | een knop **Zetten** die het systeemvenster opent (via `beforeinstallprompt`) |
+| Safari op iOS | uitleg: Delen → Zet op beginscherm. Safari geeft nooit een venster |
+| al geïnstalleerd | niets — de app draait in `display-mode: standalone` en houdt zijn mond |
+
+Komt het venster niet, dan staat er nog steeds hoe het via het browsermenu moet.
+Chrome vuurt `beforeinstallprompt` namelijk pas als hij vindt dat je even bezig
+bent geweest, en "het kan niet" zou dan een leugen zijn.
+
+Het manifest heeft `id`, `display_override`, snelkoppelingen naar *nieuw rondje*
+en *stickerboek* (lang indrukken op het icoon), en vier iconen: 192 en 512 in
+`any` en in `maskable`, want Android snijdt een vorm uit het icoon en kiest per
+beeldpuntdichtheid. Alle vijf iconen zitten in de shellcache, zodat de
+installatiedialoog ook zonder bereik een plaatje heeft.
+
 ## Offline
 
 De service worker cachet de app-shell en de bibliotheken. De **kaarttegels** zijn
@@ -315,11 +390,10 @@ aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
   controles), maar of de lijn lekker aanvoelt, of 250 ms het juiste moment is om
   vast te snappen, of 22 px raakafstand op een duim klopt en of de knoppen onderin
   niet in de weg zitten, is alleen op een telefoon te zien.
-- **De geocache-koppeling is niet getest.** [src/okapi.js](src/okapi.js) is
-  geschreven zonder consumer key, dus of de veldnamen en het locatieformaat van
-  OKAPI kloppen is onbekend. Hij faalt bewust stil: geen sleutel of een fout
-  antwoord levert nul caches en laat de routegeneratie ongemoeid. Zodra je een
-  sleutel invult is dit het eerste dat verificatie nodig heeft.
+- **De geocaches wachten op één consumer key.** Alles eromheen is nagerekend tegen
+  de publieke apiref (`node spike/okapi-probe.mjs`, 31 controles), maar een
+  antwoord *mét* caches erin heeft nog nooit door de code gelopen. Zie
+  [Geocaches](#geocaches).
 - **Eén wandeling lopen.** Vier aannames zijn nog onbeproefd en geen regel code
   kan ze bevestigen: leesbaarheid van de donkere kaart in fel zonlicht,
   GPS-kwaliteit onder een bladerdek, gerammel van de compasnaald, en of een kind

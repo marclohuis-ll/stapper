@@ -18,7 +18,7 @@ import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
 import { bearing, distM } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
-import { searchCaches } from './src/okapi.js';
+import { searchCaches, testKey, SIGNUP_URL } from './src/okapi.js';
 import { zoekPlaats } from './src/geocode.js';
 import * as store from './src/store.js';
 import * as offline from './src/offline.js';
@@ -26,12 +26,15 @@ import * as mapview from './src/mapview.js';
 
 /* ── Feature flags ───────────────────────────────────────────────────────── */
 const CONFIG = {
-  // Beslissing 8: geocaches komen van opencaching.nl, en dat vereist een
-  // consumer key die nog aangevraagd moet worden. Tot die er is blijft de kaart
-  // uit — een schakelaar die niets doet is erger dan geen schakelaar.
-  geocachesAan: false,
   stickerBeloningen: true,
 };
+
+/* Geocaches hebben geen eigen schakelaar. Vul je bij Instellingen een
+ * opencaching.nl-sleutel in, dan verschijnt de chip *Geocache* tussen de andere
+ * en werkt hij als elke andere soort. Er stond hier eerder een tweede knop naast
+ * die hetzelfde beloofde maar niks deed; twee bedieningen voor één ding is erger
+ * dan één. */
+const geocachesBeschikbaar = () => !!state.okapiKey;
 
 /* ── Inhoud die nog niet uit data komt ───────────────────────────────────── */
 const WELKOM_PUNTEN = [
@@ -59,12 +62,15 @@ const ZOEK_HINT = {
   schuilhut: 'zoek een hutje waar je kunt schuilen',
   picknick: 'zoek een tafel van hout',
   uitkijk: 'zoek een plek waar je heel ver kunt kijken',
+  // Een geocache is verstopt: niet "zoek een geocache" maar waar hij kan liggen.
+  cache: 'zoek een doosje: onder een boomstronk, in een holletje, achter een steen',
 };
 
 /* Stickers zijn per soort punt; die van het gevonden punt wordt uitgereikt. */
 const STICKER_FOR = {
   speeltuin: 'toys', brug: 'water_drop', pauze: 'cake', sportveld: 'sports_soccer',
   knooppunt: 'signpost', schuilhut: 'cabin', picknick: 'emoji_nature', uitkijk: 'landscape',
+  cache: 'inventory_2',
 };
 
 const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','profiel'];
@@ -113,6 +119,12 @@ const state = {
   editSetting: null,          // 'code' | 'okapi' | null
   parentCode: null,
   okapiKey: null,
+  okapiTest: null,            // null | 'bezig' | {ok, reden}
+
+  /* Op het beginscherm zetten. `installer` is het beforeinstallprompt-event dat
+   * Chrome ons geeft; dat mag je maar één keer gebruiken, dus we bewaren het. */
+  installer: null,
+  installKaartWeg: false,
 };
 
 /* ── De wandeling ────────────────────────────────────────────────────────
@@ -148,7 +160,13 @@ const uurMin = (mins) => {
   return h ? `${h} u ${String(m).padStart(2, '0')}` : `${m} min`;
 };
 
-const pickedKeys = () => CATEGORIES.filter((c) => state.picked[c.key]).map((c) => c.key);
+/* Alleen soorten die er ook echt zijn. Een aangevinkte geocache-chip zonder
+ * sleutel zou een harde eis worden waar geen enkele bron aan kan voldoen: de
+ * generator zoekt zich dan zes rondes lam en komt met niets terug. */
+const pickedKeys = () => CATEGORIES
+  .filter((c) => state.picked[c.key])
+  .filter((c) => c.from !== 'okapi' || geocachesBeschikbaar())
+  .map((c) => c.key);
 const currentRoute = () => (state.routeId != null ? state.routes[state.routeId] : null);
 
 /* ── Screens ────────────────────────────────────────────────────────────── */
@@ -187,6 +205,7 @@ views.home = () => `
         </div>
 
         ${locationPill()}
+        ${installKaart()}
 
         <button class="bigcard" data-go="instellen">
           <span class="bigcard__blob"></span>
@@ -217,6 +236,113 @@ views.home = () => `
       </div>
     </div>
   </div>`;
+
+/* ── Op het beginscherm zetten ────────────────────────────────────────────────
+   Stapper is een PWA en was ook al te installeren, maar alleen via het menu van
+   de browser — en daar gaat niemand zoeken. Dus vraagt de app het zelf.
+
+   Drie situaties, en ze verschillen echt:
+     - Chrome/Edge geven ons een `beforeinstallprompt`. Dan kunnen we een knop
+       tonen die het systeemvenster opent.
+     - Safari op iOS geeft dat nooit. Daar is Delen → Zet op beginscherm het enige
+       dat werkt, dus staat dat er als tekst.
+     - Al geïnstalleerd: dan draait de app in `display-mode: standalone` en hoort
+       er niets te staan.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** Draait dit al als losse app? */
+const alsApp = () =>
+  (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+  window.navigator.standalone === true;
+
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.platform || '') ||
+  (/Mac/.test(navigator.platform || '') && navigator.maxTouchPoints > 1);
+
+/** Valt er iets te installeren, en heeft de gebruiker de kaart niet weggetikt? */
+const installKanNu = () => !alsApp() && (state.installer || isIOS());
+
+function installKaart() {
+  if (state.installKaartWeg || !installKanNu()) return '';
+
+  return `
+  <div class="install">
+    <span class="install__ico">${ico('install_mobile')}</span>
+    <span class="install__text">
+      <span class="install__title">Zet Stapper op je beginscherm</span>
+      <span class="install__sub">${state.installer
+        ? 'Dan start hij schermvullend, zonder adresbalk, en werkt de offline kaart ook los van de browser.'
+        : 'Tik onderin op Delen en kies “Zet op beginscherm”.'}</span>
+    </span>
+    ${state.installer
+      ? `<button class="install__doe" data-act="installeer">Zetten</button>`
+      : ''}
+    <button class="install__weg" data-act="install-weg" aria-label="Niet nu">${ico('close')}</button>
+  </div>`;
+}
+
+/**
+ * Dezelfde zaak bij de instellingen, want de kaart op het beginscherm kun je
+ * wegtikken en dan moet je er alsnog bij kunnen. Hier staat ook wat je moet doen
+ * als de browser ons geen venster gunt — Firefox op Android bijvoorbeeld doet dat
+ * niet, en dan is "het kan niet" een leugen terwijl het via het menu wel gaat.
+ */
+function installRegel() {
+  if (alsApp()) {
+    return `
+    <div class="setting setting--stil">
+      ${ico('check_circle')}
+      <span class="setting__text">
+        <span class="setting__title">Staat op je beginscherm</span>
+        <span class="setting__sub">je gebruikt Stapper nu als losse app</span>
+      </span>
+    </div>`;
+  }
+
+  if (state.installer) {
+    return `
+    <button class="setting" data-act="installeer">
+      ${ico('install_mobile')}
+      <span class="setting__text">
+        <span class="setting__title">Op het beginscherm zetten</span>
+        <span class="setting__sub">schermvullend, zonder adresbalk</span>
+      </span>
+      ${ico('chevron_right', 'setting__chev')}
+    </button>`;
+  }
+
+  return `
+  <div class="setting setting--stil">
+    ${ico('install_mobile')}
+    <span class="setting__text">
+      <span class="setting__title">Op het beginscherm zetten</span>
+      <span class="setting__sub">${isIOS()
+        ? 'Tik onderin op Delen en kies “Zet op beginscherm”.'
+        : 'Via het menu van je browser: “App installeren” of “Toevoegen aan beginscherm”.'}</span>
+    </span>
+  </div>`;
+}
+
+async function installeer() {
+  const e = state.installer;
+  if (!e) return;
+
+  // Het event is eenmalig: na prompt() is het op, of het nu gelukt is of niet.
+  state.installer = null;
+  try {
+    await e.prompt();
+    const keuze = await e.userChoice;
+    if (keuze && keuze.outcome === 'accepted') {
+      state.installKaartWeg = true;
+    } else {
+      // Afgewezen: niet blijven zeuren deze sessie, maar de knop bij de
+      // instellingen blijft staan zodat het later alsnog kan.
+      state.installKaartWeg = true;
+    }
+  } catch (err) {
+    console.warn('installeren mislukt:', err.message);
+  }
+  render();
+}
 
 const dagLabel = () => {
   const dagen = ['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
@@ -314,7 +440,7 @@ views.instellen = () => {
               ? `<button class="link-knop" data-act="wis-chips">niets, verras me</button>` : ''}
           </div>
           <div class="chips" role="group" aria-label="Onderweg moet er zijn">
-            ${CATEGORIES.filter((c) => c.from !== 'okapi' || state.okapiKey).map((c) => `
+            ${CATEGORIES.filter((c) => c.from !== 'okapi' || geocachesBeschikbaar()).map((c) => `
               <button class="chip ${c.from !== 'tiles' ? 'chip--net' : ''}"
                       data-act="chip" data-chip="${c.key}"
                       aria-pressed="${!!state.picked[c.key]}"
@@ -329,7 +455,6 @@ views.instellen = () => {
             : `Niets aangevinkt is ook goed: dan zoekt hij simpelweg het mooiste
                rondje vanaf je startpunt, met zo veel paadjes als er te vinden zijn.`}</p>
 
-          ${CONFIG.geocachesAan ? cacheCard() : ''}
         </div>
       </div>
     </div>
@@ -339,16 +464,6 @@ views.instellen = () => {
     </div>
   </div>`;
 };
-
-const cacheCard = () => `
-  <button class="cache" data-act="toggle-cache" aria-pressed="true">
-    <span class="cache__ico">${ico('travel_explore')}</span>
-    <span class="cache__text">
-      <span class="cache__title">Geocaches meenemen</span>
-      <span class="cache__sub">via opencaching.nl</span>
-    </span>
-    <span class="switch"><span class="switch__knob"></span></span>
-  </button>`;
 
 const startLabel = () => {
   const k = state.startKeuze;
@@ -553,15 +668,9 @@ views.detail = () => {
 
           <div class="section-head section-head--tight">Onderweg kom je langs</div>
           <div class="poi-list">
-            ${r.pois.map((p) => `
-              <div class="poi">
-                <span class="poi__ico">${ico(p.icon)}</span>
-                <span class="poi__text">
-                  <span class="poi__name">${esc(p.naam)}</span>
-                  <span class="poi__meta">${esc(p.meta)}</span>
-                </span>
-              </div>`).join('')}
+            ${r.pois.map((p) => poiRegel(p)).join('')}
           </div>
+          ${attributieRegel(r)}
         </div>
       </div>
     </div>
@@ -577,6 +686,40 @@ views.detail = () => {
     </div>
   </div>`;
 };
+
+/** Eén punt onderweg. Heeft het een eigen pagina — bij een geocache is dat zo —
+ *  dan is de naam een link daarheen; de voorwaarden van opencaching.nl vragen daar
+ *  uitdrukkelijk om. */
+function poiRegel(p) {
+  const naam = p.url
+    ? `<a class="poi__name poi__name--link" href="${esc(p.url)}"
+          target="_blank" rel="noopener noreferrer">${esc(p.naam)}${ico('open_in_new', 'poi__uit')}</a>`
+    : `<span class="poi__name">${esc(p.naam)}</span>`;
+
+  return `
+    <div class="poi">
+      <span class="poi__ico">${ico(p.icon)}</span>
+      <span class="poi__text">
+        ${naam}
+        <span class="poi__meta">${esc(p.meta)}</span>
+      </span>
+    </div>`;
+}
+
+/**
+ * Naamsvermelding voor de geocaches in deze route.
+ *
+ * Dit is geen nette geste maar de voorwaarde waaronder we de data mogen tonen: de
+ * Opencaching.NL Data License eist vermelding van de auteur én van Opencaching.NL,
+ * en omdat wij geen cachebeschrijvingen laten zien moet dat via het aparte
+ * `attribution_note`-veld. De HTML is in src/okapi.js teruggebracht tot tekst en
+ * links — links weghalen mag niet, die vermelding is juist het punt.
+ */
+function attributieRegel(r) {
+  const noten = [...new Set((r.pois || []).map((p) => p.attributie).filter(Boolean))];
+  if (!noten.length) return '';
+  return `<p class="attributie">${noten.join(' ')}</p>`;
+}
 
 /* ── Route aanpassen ──────────────────────────────────────────────────────
    Schermvullende kaart. Bewust geen sleepbare lijn in de 310 px hero van het
@@ -904,20 +1047,38 @@ views.profiel = () => {
             ${ico('chevron_right', 'setting__chev')}
           </button>`}
 
-          ${state.editSetting === 'okapi' ? settingForm({
-            key: 'okapi', label: 'opencaching.nl consumer key', value: state.okapiKey || '',
-            type: 'text', hint: 'Aan te vragen bij opencaching.nl. Blijft op dit toestel; hij komt niet in de repo.',
-          }) : `
+          ${state.editSetting === 'okapi' ? `
+            ${settingForm({
+              key: 'okapi', label: 'opencaching.nl consumer key', value: state.okapiKey || '',
+              type: 'text', hint: 'Blijft op dit toestel; hij komt niet in de repo.',
+            })}
+            <p class="hint-line">Nog geen sleutel? Vraag er een aan op
+              <a href="${SIGNUP_URL}" target="_blank" rel="noopener noreferrer">opencaching.nl</a>
+              — je vult een naam en je e-mailadres in en gaat akkoord met de
+              datalicentie. De sleutel komt per e-mail.</p>` : `
           <button class="setting" data-act="set-okapi">
             ${ico('travel_explore')}
             <span class="setting__text">
               <span class="setting__title">Geocaches (opencaching.nl)</span>
               <span class="setting__sub">${state.okapiKey
-                ? 'sleutel ingevuld — speurtocht staat aan'
+                ? 'sleutel ingevuld — de chip Geocache staat bij Instellen'
                 : 'geen sleutel — speurtocht staat uit'}</span>
             </span>
             ${ico('chevron_right', 'setting__chev')}
-          </button>`}
+          </button>
+          ${state.okapiKey ? `
+            <div class="sleuteltest">
+              <button class="btn-ghost btn-ghost--sm" data-act="test-okapi"
+                      ${state.okapiTest === 'bezig' ? 'disabled' : ''}>
+                ${state.okapiTest === 'bezig' ? 'Even proberen…' : 'Werkt de sleutel?'}
+              </button>
+              ${state.okapiTest && state.okapiTest !== 'bezig' ? `
+                <span class="sleuteltest__uit ${state.okapiTest.ok ? 'is-goed' : 'is-mis'}">
+                  ${ico(state.okapiTest.ok ? 'check_circle' : 'error')}${esc(state.okapiTest.reden)}
+                </span>` : ''}
+            </div>` : ''}`}
+
+          ${installRegel()}
 
           <div class="dubbel">
             <button class="btn-export" data-act="export">
@@ -1267,6 +1428,20 @@ async function bewaarRoute(button) {
   const nu = !aanwezig;
   button.setAttribute('aria-pressed', String(nu));
   button.querySelector('.ms').textContent = nu ? 'bookmark_added' : 'bookmark';
+}
+
+/**
+ * Werkt de sleutel? Dit moet je kunnen weten in de keuken, niet pas in het bos.
+ *
+ * Zonder deze knop faalt OKAPI stil — dat is met opzet, want een route zonder
+ * caches is beter dan geen route — maar dan weet je ook nooit of het aan je
+ * sleutel ligt of aan een gebied zonder caches.
+ */
+async function probeerSleutel() {
+  state.okapiTest = 'bezig';
+  render();
+  state.okapiTest = await testKey(state.okapiKey);
+  refreshIfShowing('profiel');
 }
 
 async function exportBestand() {
@@ -1647,6 +1822,9 @@ async function aanvullen({ lat, lon, radiusM, keys }) {
   const cachePois = caches.map((c) => ({
     category: 'cache', label: c.naam, name: c.naam, icon: 'travel_explore',
     coord: c.coord,
+    soort: c.soort,
+    // Verplicht mee: zonder naamsvermelding en link mag deze data niet getoond.
+    url: c.url, attributie: c.attributie,
     distFromStart: Math.hypot(
       (c.coord[0] - lon) * 111320 * Math.cos(lat * Math.PI / 180),
       (c.coord[1] - lat) * 111320),
@@ -1807,6 +1985,10 @@ app.addEventListener('click', (e) => {
     case 'cancel-profiel': state.editProfile = false; render(); break;
     case 'set-code':       state.editSetting = 'code';  render(); break;
     case 'set-okapi':      state.editSetting = 'okapi'; render(); break;
+    case 'test-okapi':     probeerSleutel(); break;
+
+    case 'installeer':     installeer(); break;
+    case 'install-weg':    state.installKaartWeg = true; render(); break;
     case 'cancel-setting': state.editSetting = null;  render(); break;
 
     case 'pauze': togglePauze(); break;
@@ -1884,6 +2066,8 @@ app.addEventListener('submit', (e) => {
     } else if (key === 'okapi') {
       state.okapiKey = raw || null;
       store.setSetting('okapiKey', state.okapiKey);
+      // Een nieuwe sleutel maakt de vorige uitslag onwaar.
+      state.okapiTest = null;
     }
     state.editSetting = null;
     render();
@@ -1950,6 +2134,23 @@ const initial = fromHash();
 if (initial) { enter(initial); } else { location.replace('#/welkom'); enter('welkom'); }
 
 laadOpslag();
+
+/* ── Installeren ────────────────────────────────────────────────────────── */
+/* Chrome vuurt dit pas als hij de app installeerbaar vindt én je even bezig bent
+ * geweest, dus soms bij de eerste blik nog niet. Daarom is er ook een uitleg voor
+ * het geval het event nooit komt: zie installRegel(). */
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Zonder dit laat Chrome zijn eigen balkje zien op het verkeerde moment.
+  e.preventDefault();
+  state.installer = e;
+  refreshIfShowing('home', 'profiel');
+});
+
+window.addEventListener('appinstalled', () => {
+  state.installer = null;
+  state.installKaartWeg = true;
+  refreshIfShowing('home', 'profiel');
+});
 
 /* ── Service worker ─────────────────────────────────────────────────────── */
 /* Niet op localhost, tenzij je hem expliciet wil testen met ?sw.
