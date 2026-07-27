@@ -147,7 +147,43 @@ gevraagde afstand, dan laat de app liever een eis vieren dan te liegen over de
 afstand: je krijgt kortere rondjes met een badge als "Zonder speeltuin", náást het
 kortste rondje waarin alles zit.
 
-Details en meetwaarden: [spike/BEVINDINGEN.md](spike/BEVINDINGEN.md).
+### De route zelf verslepen
+
+Bevalt de route bijna, dan hoef je hem niet weg te gooien. *Aanpassen* op het
+detailscherm geeft je de route schermvullend, en daar **sleep je de lijn** naar waar
+je wél wil lopen. De app zoekt er zelf de paden bij.
+
+- Pak je de lijn binnen 22 px, dan sleep je hem; raak je de kaart ernaast, dan
+  schuift de kaart. Er is geen sleepdrempel — je pakt hem of niet.
+- Tijdens het slepen zie je een **gestippelde elastiek** naar je vinger en bij je
+  duim `≈ 5,3 km`, met eronder hoeveel dat méér of minder is dan je wilde. Rechte
+  lijnen, geen router: een lijn die achterloopt op je duim voelt kapot.
+- Houd je **250 ms stil**, dan snapt hij vast op de echte paden terwijl je nog
+  vasthoudt. Vanaf dat moment versleep je dat punt in plaats van de lijn.
+- Bovenin zie je wat het kost: `44% → 61% paadjes`, en of het nog een echt rondje is.
+- **Tik** op een punt om het eruit te halen — een speeltuin verplaats je niet, die
+  staat waar hij staat. Vormpunten (holle muntgroene knoopjes) zijn jouw omweg en
+  mogen ook gewoon weg. Het startpunt blijft waar het is.
+- **↺** onderin maakt de laatste aanpassing ongedaan; één sleep is één stap terug,
+  ook als hij onderweg al een keer geroute heeft.
+
+De `≈` is geen bescheidenheid: de schatting zit tot 22% naast de werkelijkheid, en
+dat is niet weg te rekenen — sleep je naar links dan ligt daar een pad, naar rechts
+moet de router om. Zodra de echte routering binnen is valt de `≈` weg. Zie meting 9.
+
+Details en meetwaarden: [spike/BEVINDINGEN.md](spike/BEVINDINGEN.md). Beide lagen
+zijn te controleren zonder dat er een kaart getekend hoeft te worden — het model
+tegen de echte router, en het gebaar tegen een nepkaart:
+
+```
+node spike/edit-probe.mjs
+```
+
+En in de console van de app:
+
+```js
+(await import('/spike/gebaar-probe.js')).run()
+```
 
 ## Layout
 
@@ -159,6 +195,8 @@ Details en meetwaarden: [spike/BEVINDINGEN.md](spike/BEVINDINGEN.md).
 | [src/generator.js](src/generator.js) | de routegenerator |
 | [src/pois.js](src/pois.js) | categorieën, de onzichtbare tegel-oogster, Overpass-aanvulling |
 | [src/router.js](src/router.js) | BRouter, lus en heen-en-terug |
+| [src/edit.js](src/edit.js) | route aanpassen: waypoints, elastiek, schatting, ongedaan — geen kaart, geen DOM |
+| [src/edit-map.js](src/edit-map.js) | het gebaar en wat je onder je vinger ziet |
 | [src/geo.js](src/geo.js) | afstand, peiling, tour-ordening |
 | [src/map-style.js](src/map-style.js) | kaartstijl in het Boslamp-palet + oogst-stijl |
 | [src/mapview.js](src/mapview.js) | één MapLibre-instantie die tussen schermen verhuist |
@@ -186,6 +224,7 @@ linken.
 | `#/zoeken` | Zoeken, met echte voortgang | echt |
 | `#/resultaten` | Gevonden rondjes | echt |
 | `#/detail` | Route op de kaart + punten onderweg | echt |
+| `#/bewerken` | Route verslepen op een schermvullende kaart | echt |
 | `#/onderweg` | Live wandeling: kaart, voortgang, volgend punt | echt |
 | `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
 | `#/profiel` | Stickerboek, bewaarde rondjes, export | echt |
@@ -271,8 +310,11 @@ aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
 **voorlezen** spreekt de afstand en het volgende punt uit via `speechSynthesis`.
 
 ## Nog te doen
-- **Offline**: service worker, en de vectortiles van de gekozen route vóór
-  vertrek in de Cache API.
+- **Het sleepgebaar is niet met een echte vinger getest.** Het model is nagerekend
+  tegen de echte router (40 controles) en het gebaar tegen een nepkaart (33
+  controles), maar of de lijn lekker aanvoelt, of 250 ms het juiste moment is om
+  vast te snappen, of 22 px raakafstand op een duim klopt en of de knoppen onderin
+  niet in de weg zitten, is alleen op een telefoon te zien.
 - **De geocache-koppeling is niet getest.** [src/okapi.js](src/okapi.js) is
   geschreven zonder consumer key, dus of de veldnamen en het locatieformaat van
   OKAPI kloppen is onbekend. Hij faalt bewust stil: geen sleutel of een fout

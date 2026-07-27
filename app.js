@@ -11,7 +11,8 @@
 'use strict';
 
 import { CATEGORIES, createHarvester, supplementFromOverpass } from './src/pois.js';
-import { generateRoutes, GenerateError } from './src/generator.js';
+import { generateRoutes, GenerateError, formatDuration, vormLabel } from './src/generator.js';
+import { createEditor } from './src/edit-map.js';
 import { getPosition, watchPosition, LocationError, INSECURE } from './src/geolocate.js';
 import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
@@ -66,7 +67,7 @@ const STICKER_FOR = {
   knooppunt: 'signpost', schuilhut: 'cabin', picknick: 'emoji_nature', uitkijk: 'landscape',
 };
 
-const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','onderweg','kind','profiel'];
+const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','profiel'];
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 const state = {
@@ -533,6 +534,7 @@ views.detail = () => {
       <div class="sheet">
         <div class="detail__hero" id="detail-map">
           <button class="detail__back" data-go="resultaten" aria-label="Terug">${ico('arrow_back')}</button>
+          <button class="detail__bewerk" data-act="bewerk">${ico('gesture')}Aanpassen</button>
         </div>
 
         <div class="detail__sheet">
@@ -572,6 +574,40 @@ views.detail = () => {
           ${ico(opgeslagen ? 'bookmark_added' : 'bookmark')}</button>`;
       })()}
       <button class="btn-cta btn-cta--flex" data-go="onderweg">Start de wandeling</button>
+    </div>
+  </div>`;
+};
+
+/* ── Route aanpassen ──────────────────────────────────────────────────────
+   Schermvullende kaart. Bewust geen sleepbare lijn in de 310 px hero van het
+   detailscherm: je hebt de ruimte nodig om te zien waar je hem naartoe sleept,
+   en met een blad eronder valt de helft van de route buiten beeld.
+   ───────────────────────────────────────────────────────────────────────── */
+views.bewerken = () => {
+  const r = currentRoute();
+  if (!r) return views.resultaten();
+
+  return `
+  <div class="screen bewerk">
+    <div class="bewerk__map" id="bewerken-map"></div>
+
+    <div class="bewerk__top">
+      <button class="bewerk__terug" data-act="bewerk-af" aria-label="Aanpassen afbreken">${ico('close')}</button>
+      <span class="bewerk__meting">
+        <span class="bewerk__km" data-bewerk-km>${esc(r.km)}</span>
+        <span class="bewerk__sub" data-bewerk-sub></span>
+      </span>
+    </div>
+
+    <p class="bewerk__uitleg" data-bewerk-uitleg>
+      Sleep de lijn naar waar je wél wil lopen. Tik op een punt om het eruit te halen.
+    </p>
+
+    <div class="bewerk__acties">
+      <button class="btn-round" data-act="bewerk-undo" aria-label="Laatste aanpassing ongedaan maken" disabled>
+        ${ico('undo')}</button>
+      <button class="btn-ghost" data-act="bewerk-af">Laat maar</button>
+      <button class="btn-cta btn-cta--flex" data-act="bewerk-klaar">Klaar</button>
     </div>
   </div>`;
 };
@@ -960,6 +996,7 @@ const savedRouteRow = (r) => `
 const app = document.getElementById('app');
 let lastScreen = null;
 let harvester = null;
+let editor = null;              // actief op het bewerkscherm, anders null
 
 // De resultaatkaartjes tekenen de echte routegeometrie als SVG; via window zodat
 // de template-string erbij kan zonder de views tot modules te maken.
@@ -981,7 +1018,7 @@ function render() {
   photoUrls.forEach(URL.revokeObjectURL);
   photoUrls = [];
 
-  const kaartSchermen = ['detail', 'onderweg', 'startpunt'];
+  const kaartSchermen = ['detail', 'bewerken', 'onderweg', 'startpunt'];
   if (kaartSchermen.includes(lastScreen) && !kaartSchermen.includes(state.screen)) {
     mapview.detach();
   }
@@ -998,6 +1035,26 @@ function render() {
 
 /** De kaart verhuist naar het scherm dat hem nodig heeft. */
 async function mountMap() {
+  if (state.screen === 'bewerken') {
+    const host = document.getElementById('bewerken-map');
+    const route = currentRoute();
+    if (!host || !route) return;
+    await mapview.attach(window.maplibregl, host);
+    // De gewone routelijn gaat uit; hieronder tekent de editor zijn eigen lijn,
+    // knopen en elastiek, die per frame moeten kunnen veranderen.
+    mapview.render({ route: null, position: null, fit: false });
+    mapview.setRouteVisible(false);
+    if (!editor) {
+      editor = createEditor({
+        map: mapview.instance(), container: host, route,
+        targetM: state.km * 1000, shape: state.shape,
+        onState: patchBewerk, onMessage: bewerkMelding,
+      });
+      editor.fit();
+    }
+    return;
+  }
+
   if (state.screen === 'startpunt') {
     const host = document.getElementById('startpunt-map');
     if (!host) return;
@@ -1242,6 +1299,141 @@ function togglePauze() {
   render();
 }
 
+/* ── Route aanpassen ────────────────────────────────────────────────────────
+   De balk bovenin en de knoppen onderin worden ter plekke bijgewerkt, nooit via
+   render(): een hertekening zou de kaart opnieuw opbouwen en het duimlabel
+   weggooien — precies de twee dingen die tijdens het slepen moeten blijven staan.
+   ───────────────────────────────────────────────────────────────────────────── */
+let bewerkState = null;
+let padPijlTimer = null;
+let uitlegTimer = null;
+
+const UITLEG = 'Sleep de lijn naar waar je wél wil lopen. Tik op een punt om het eruit te halen.';
+
+function patchBewerk(s) {
+  bewerkState = s;
+  tekenBewerk();
+}
+
+function tekenBewerk() {
+  const s = bewerkState;
+  const km = app.querySelector('[data-bewerk-km]');
+  const sub = app.querySelector('[data-bewerk-sub]');
+  if (!s || !km || !sub) return;
+
+  km.textContent = `${(s.distanceM / 1000).toFixed(1).replace('.', ',')} km`;
+  km.classList.toggle('bewerk__km--bezig', s.bezig);
+
+  if (s.bezig) {
+    sub.innerHTML = 'het echte pad zoeken…';
+  } else {
+    const delen = [];
+    if (s.pathShare != null) {
+      const nu = Math.round(s.pathShare * 100);
+      const was = s.vorigePad == null ? null : Math.round(s.vorigePad * 100);
+      // Het verschil tonen is het hele punt van slepen: je ziet dat je omweg
+      // je van asfalt naar paadjes brengt. Na een paar tellen valt het weg.
+      const pijl = was != null && !s.pijlWeg && Math.abs(nu - was) >= 2;
+      delen.push(pijl ? `<span class="bewerk__was">${was}%</span> ${nu}% paadjes`
+                      : `${nu}% paadjes`);
+      clearTimeout(padPijlTimer);
+      if (pijl) padPijlTimer = setTimeout(() => { s.pijlWeg = true; tekenBewerk(); }, 2600);
+    }
+    delen.push(vormLabel(s.overlap));
+    if (s.vormpunten) {
+      delen.push(`${s.vormpunten} eigen bocht${s.vormpunten > 1 ? 'en' : ''}`);
+    }
+    sub.innerHTML = delen.join(' · ');
+  }
+
+  const undo = app.querySelector('[data-act="bewerk-undo"]');
+  if (undo) undo.disabled = !s.canUndo;
+
+  const klaar = app.querySelector('[data-act="bewerk-klaar"]');
+  if (klaar) klaar.disabled = s.bezig;
+}
+
+function bewerkMelding(tekst) {
+  const el = app.querySelector('[data-bewerk-uitleg]');
+  if (!el) return;
+  el.textContent = tekst;
+  el.classList.add('bewerk__uitleg--melding');
+  clearTimeout(uitlegTimer);
+  uitlegTimer = setTimeout(() => {
+    el.textContent = UITLEG;
+    el.classList.remove('bewerk__uitleg--melding');
+  }, 3600);
+}
+
+function sluitEditor() {
+  clearTimeout(padPijlTimer);
+  clearTimeout(uitlegTimer);
+  bewerkState = null;
+  editor.destroy();
+  editor = null;
+  mapview.setRouteVisible(true);
+}
+
+function bewerkKlaar() {
+  if (!editor) { go('detail'); return; }
+  const res = editor.resultaat();
+  if (res.veranderd) pasRouteToe(res);
+  go('detail');
+  if (res.veranderd) {
+    // De corridor is verschoven, dus de opgehaalde tegels dekken hem niet meer.
+    state.offline = { fraction: 0, busy: false, done: 0, total: 0 };
+    checkOffline();
+    werkBewaardeBij();
+  }
+}
+
+/**
+ * De aangepaste route terugschrijven met dezelfde labels die de generator geeft.
+ * Alles wat op het detailscherm staat komt hieruit, dus het moet compleet zijn:
+ * een route met een nieuwe lijn maar een oude afstand is erger dan geen route.
+ */
+function pasRouteToe(res) {
+  const r = currentRoute();
+  const kf = kidFactor(state.profile.leeftijd);
+  const pois = res.waypoints.filter((w) => w.kind === 'poi' && w.poi).map((w) => w.poi);
+  const doel = state.km * 1000;
+
+  state.routes[state.routeId] = {
+    ...r,
+    coords: res.coords,
+    waypoints: res.waypoints,
+    distanceM: res.distanceM,
+    km: `${(res.distanceM / 1000).toFixed(1).replace('.', ',')} km`,
+    walkTimeS: res.timeS,
+    kidTimeS: res.timeS * kf,
+    tijd: formatDuration(res.timeS * kf),
+    pathShare: res.pathShare,
+    padLabel: res.pathShare == null ? null : `${Math.round(res.pathShare * 100)}% paadjes`,
+    byKind: res.byKind,
+    overlap: res.overlap,
+    vormLabel: vormLabel(res.overlap),
+    pois,
+    punten: `${pois.length} punten`,
+    badge: 'Zelf aangepast',
+    // De eis die je liet vallen is niet meer relevant zodra je zelf hebt gesleept.
+    dropped: [],
+    error: Math.abs(res.distanceM - doel) / doel,
+  };
+}
+
+/** Stond dit rondje in het boek, dan hoort daar nu de aangepaste versie in. */
+async function werkBewaardeBij() {
+  const r = currentRoute();
+  const bestaand = state.saved.find((x) => x.naam === r.naam);
+  if (!bestaand) return;
+  try {
+    await store.saveRoute({ ...r, id: bestaand.id });
+    state.saved = await store.listSavedRoutes();
+  } catch (e) {
+    console.warn('bewaarde route niet bijgewerkt:', e.message);
+  }
+}
+
 /* ── Offline kaart ──────────────────────────────────────────────────────── */
 
 async function haalOffline() {
@@ -1383,6 +1575,10 @@ function go(screen) {
 }
 
 function enter(screen) {
+  // De editor hangt aan DOM die bij het hertekenen verdwijnt, dus die moet weg
+  // vóórdat we ergens anders naartoe gaan.
+  if (screen !== 'bewerken' && editor) sluitEditor();
+
   state.screen = screen;
   state.showSticker = false;
   state.showLock = false;
@@ -1548,6 +1744,12 @@ app.addEventListener('click', (e) => {
       break;
 
     case 'bewaar': bewaarRoute(el); break;
+
+    /* ── route aanpassen ── */
+    case 'bewerk': go('bewerken'); break;
+    case 'bewerk-undo': if (editor) editor.undo(); break;
+    case 'bewerk-af': go('detail'); break;
+    case 'bewerk-klaar': bewerkKlaar(); break;
 
     case 'open-saved': {
       const r = state.saved.find((x) => x.id === el.dataset.id);

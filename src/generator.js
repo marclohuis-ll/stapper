@@ -608,11 +608,7 @@ function decorate(targetM, all, kidFactor = KID_TIME_FACTOR) {
       padLabel: c.pathShare == null ? null : `${Math.round(c.pathShare * 100)}% paadjes`,
       byKind: c.byKind,
       overlap: c.overlap ?? 0,
-      // Eerlijk benoemen wat het is. Boven een derde dubbel gelopen mag je het
-      // geen rondje meer noemen.
-      vormLabel: (c.overlap ?? 0) > 0.33 ? 'deels heen en terug'
-               : (c.overlap ?? 0) > 0.15 ? 'rondje met een stukje terug'
-               : 'echt rondje',
+      vormLabel: vormLabel(c.overlap),
       omschrijving: describe(c),
       pois: c.pois
         // Ankers zijn geen bezienswaardigheid; die horen niet in de lijst.
@@ -703,7 +699,17 @@ function labelPlural(key, n) {
 
 /** BRouter's hiking-beta loopt ~5 km/u. Met een kind erbij is dat onrealistisch,
  *  en de factor 1,85 reproduceert de 22 min/km waar het ontwerp van uitging. */
-function formatDuration(seconds) {
+/* Eerlijk benoemen wat het is. Boven een derde dubbel gelopen mag je het geen
+ * rondje meer noemen. Staat hier zodat een zelf aangepaste route dezelfde woorden
+ * krijgt als een gegenereerde — twee plekken die dit bepalen gaan uiteenlopen. */
+export function vormLabel(overlap) {
+  const o = overlap ?? 0;
+  return o > 0.33 ? 'deels heen en terug'
+       : o > 0.15 ? 'rondje met een stukje terug'
+       : 'echt rondje';
+}
+
+export function formatDuration(seconds) {
   const mins = Math.round(seconds / 60);
   const h = Math.floor(mins / 60), m = mins % 60;
   return h ? `${h} u ${String(m).padStart(2, '0')}` : `${m} min`;

@@ -414,3 +414,97 @@ ETA loopt af, punten worden onderweg afgevinkt en "volgende punt" schuift door
 van bruggetje naar speeltuin naar pauzeplek. De sticker-gate weigert op 2.137 m
 met "nog 2137 meter!", biedt daarna het ontsnappingsluik, en reikt bij forceren
 de sticker van de juiste soort uit.
+
+---
+
+# 9. Route slepen — wat je duim beloofd krijgt
+
+`node spike/edit-probe.mjs` rekent de hele laag onder het slepen door tegen de
+echte BRouter: 40 controles, geen browser nodig. Dat het kan is het bewijs dat de
+scheiding klopt — `src/edit.js` kent geen kaart en geen DOM, alleen coördinaten.
+
+## Het getal bij je duim is niet te halen uit de elastiek
+
+Tijdens het slepen tekenen we rechte lijnen naar je vinger, want een netwerkcall
+per frame is niet te doen. Maar de lengte van die rechte lijnen is *korter* dan
+het pad dat ze vervangen: gemeten 3,60 km elastiek waar de echte route 3,93 km
+werd. Een label dat "korter" zegt terwijl je route langer wordt is erger dan geen
+label.
+
+Dus: van de huidige afstand het vervangen stuk aftrekken en de nieuwe omweg
+erbij met een omwegfactor, geijkt op de vorige echte routering.
+
+## Welke opslagfactor?
+
+Twee keer twaalf sleepbewegingen (3 segmenten × 2 richtingen × 200/350/600/900 m),
+schatting tegen echte routering:
+
+| opslag | gemiddeld | slechtste te laag | slechtste te hoog | binnen ±15% |
+|--------|-----------|-------------------|-------------------|-------------|
+| 1,00   | +1%       | −16%              | +16%              | 11/12       |
+| 1,05   | +2%       | −6%               | +19%              | 11/12       |
+| 1,10   | +4%       | −5%               | +22%              | 11/12       |
+| 1,15   | +6%       | −3%               | +25%              | 11/12       |
+| 1,20   | +8%       | −2%               | +28%              | 10/12       |
+
+Het is **1,1** geworden, en niet 1,0 dat de kleinste spreiding heeft. De fouten
+moeten namelijk de goede kant op vallen: 5,6 km lopen waar 5,9 km stond is een
+opluchting, 6,4 km lopen waar 5,9 km stond is met een kind van zes het einde van
+de wandeling.
+
+De spreiding is niet weg te poetsen, en dat is geen slordigheid maar de zaak zelf:
+sleep je naar links dan ligt daar een pad en klopt de rechte lijn bijna, sleep je
+naar rechts dan moet de router 400 m om. Daarom staat er een **≈** bij, en
+waarschuwt de app pas dat de route te lang wordt als de echte routering binnen is.
+
+## Wat de meting nog opleverde
+
+- Een vormpunt weer weghalen geeft de oude route **exact** terug (0 m verschil).
+  Het model is dus omkeerbaar; ongedaan maken hoeft niets te reconstrueren.
+- Het gesleepte punt landt 10 m van de nieuwe lijn — BRouter snapt het naar het
+  dichtstbijzijnde pad. Dat is precies de bedoeling: je sleept een wens, niet een
+  coördinaat.
+- Een heen-en-terug moet gespiegeld blijven bij het herrouteren (overlap 0,86).
+  Zou je `start → punten → start` laten routeren, dan maakt BRouter er stilletjes
+  een rondje van en verandert het slepen ongevraagd het soort route.
+- 22 px raakt, 23 px niet: de raakcirkel is de helft van een duimdoel van 44 px.
+
+## Het gebaar zelf, zonder kaart
+
+`edit-map.js` praat met MapLibre via een handjevol methodes — `project`,
+`unproject`, `getSource`, `dragPan` — en met je vinger via pointer-events. Beide
+zijn na te maken. `spike/gebaar-probe.js` doet dat: een nepkaart met een lineaire
+projectie, en pointer-events die met de hand afgevuurd worden. 33 controles, geen
+WebGL, geen tegels, geen frame getekend. Alle 33 goed.
+
+Openen in de app en in de console:
+
+```js
+(await import('/spike/gebaar-probe.js')).run()
+```
+
+Wat het bewijst, in de volgorde waarin het misging toen ik het schreef:
+
+- Naast de lijn tikken laat de kaart met rust; op de lijn tikken zet `dragPan`
+  uit en na het lossen weer aan. Ook als het herrouteren mislukt — dat staat vóór
+  alles wat mis kan gaan, want een kaart die niet meer schuift is niet te
+  herstellen zonder het scherm te verlaten.
+- Aanraken geeft nog géén elastiek en géén duimlabel. Dat kan namelijk net zo goed
+  een tik zijn om een punt weg te halen, en één frame elastiek is dan een
+  schrikbeeld. Vanaf 8 px is het een sleep.
+- Het duimlabel staat gecentreerd 26 px boven de vinger (gemeten: midden op 268
+  waar de vinger op 268 zat, onderkant op 422 waar de vinger op 448 zat).
+- Eén sleep blijft één stap terug, ook als hij onderweg al vastgesnapt heeft.
+- Een vormpunt weer weghalen brengt de afstand exact terug op 3,77 km.
+- Na `destroy()` zijn alle acht lagen weg, is het duimlabel weg, en luistert er
+  niets meer.
+
+En een schatting die de andere kant op viel dan de tabel hierboven suggereert:
+het duimlabel zei `≈ 5,1 km`, de echte route werd 5,51 km — 7% te laag. Precies
+waarom er een `≈` bij staat.
+
+## Wat hier níet mee getest is
+
+Of het lekker aanvoelt. Of 250 ms stilstaan het juiste moment is om vast te
+snappen, of 22 px raakafstand op een echte duim klopt, en of de knoppen onderin
+niet in de weg zitten — dat vraagt een vinger op een telefoon.

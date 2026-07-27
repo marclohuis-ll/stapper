@@ -1022,6 +1022,97 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 
 .btn-cta[disabled] { opacity: .4; cursor: default; box-shadow: none; }
 
+/* ── ROUTE AANPASSEN ────────────────────────────────────────────────────────
+   Schermvullende kaart met de bediening eroverheen. Alles wat over de kaart
+   ligt is smal en hoog aan de randen: het midden moet vrij blijven, want daar
+   sleep je met je duim.
+   ───────────────────────────────────────────────────────────────────────────── */
+.bewerk__map { position: absolute; inset: 0; }
+
+/* De kaart mag de sleep nooit als scrollen of zoomen van de pagina opvatten. */
+.bewerk__map, .bewerk__map canvas { touch-action: none; }
+.bewerk--sleept { cursor: grabbing; }
+
+.bewerk__top {
+  position: absolute; z-index: 4; left: 14px; right: 14px;
+  top: calc(12px + env(safe-area-inset-top));
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px 8px 8px; border-radius: 999px;
+  background: rgba(10,21,18,.84); border: 1px solid var(--line-soft);
+  backdrop-filter: blur(10px);
+}
+.bewerk__terug {
+  width: 40px; height: 40px; flex: none; border-radius: 999px; border: 0;
+  background: rgba(255,255,255,.08); cursor: pointer; display: grid; place-items: center;
+}
+.bewerk__terug .ms { font-size: 20px; color: var(--text); }
+.bewerk__meting { display: block; min-width: 0; }
+.bewerk__km {
+  display: block; font-family: var(--f-display); font-weight: 800; font-size: 20px;
+  letter-spacing: -.02em; color: var(--text-bright); line-height: 1.1;
+}
+/* Terwijl de router rekent is het getal nog niet waar; dat mag je zien. */
+.bewerk__km--bezig { opacity: .5; }
+.bewerk__sub {
+  display: block; font-size: 12px; color: var(--text-66);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* "44% → 61% paadjes": het oude getal doorgestreept, zodat de winst leesbaar is. */
+.bewerk__was { color: var(--text-66); text-decoration: line-through; opacity: .7; }
+.bewerk__was::after { content: ' →'; text-decoration: none; display: inline-block; }
+
+.bewerk__uitleg {
+  position: absolute; z-index: 3; left: 18px; right: 18px;
+  top: calc(78px + env(safe-area-inset-top));
+  margin: 0; text-align: center; font-size: 12.5px; line-height: 1.45;
+  color: var(--text-66); text-shadow: 0 1px 8px rgba(8,18,15,.9);
+  transition: color .2s ease;
+}
+.bewerk__uitleg--melding { color: var(--orange); font-weight: 600; }
+/* Tijdens het slepen is de uitleg in de weg: je bent al bezig. */
+.bewerk--sleept .bewerk__uitleg { opacity: 0; }
+
+.bewerk__acties {
+  position: absolute; z-index: 4; left: 0; right: 0; bottom: 0;
+  padding: 16px 18px calc(20px + env(safe-area-inset-bottom));
+  display: flex; gap: 10px; align-items: center;
+  background: linear-gradient(to top, rgba(8,18,15,.92) 55%, rgba(8,18,15,0));
+}
+.bewerk__acties .btn-round { width: 54px; height: 54px; }
+.bewerk__acties .btn-round[disabled] { opacity: .35; cursor: default; }
+.bewerk__acties .btn-cta { height: 54px; font-size: 17px; }
+.bewerk__acties .btn-ghost { flex: none; padding: 0 18px; background: rgba(10,21,18,.7); }
+/* Tijdens het slepen wijken de knoppen: je duim zit vaak onderaan het scherm. */
+.bewerk--sleept .bewerk__acties { opacity: .25; pointer-events: none; }
+.bewerk__top, .bewerk__acties, .bewerk__uitleg { transition: opacity .18s ease; }
+.bewerk--sleept .bewerk__top { opacity: .55; }
+
+/* Het label bij je duim. Boven de vinger, want daaronder zit je hand. */
+.duim {
+  position: absolute; z-index: 6; left: 0; top: 0;
+  padding: 8px 13px; border-radius: 16px;
+  background: rgba(10,21,18,.94); border: 1px solid rgba(201,242,110,.34);
+  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  pointer-events: none; opacity: 0; text-align: center; white-space: nowrap;
+}
+.duim--aan { opacity: 1; }
+.duim__km {
+  display: block; font-family: var(--f-display); font-weight: 800; font-size: 17px;
+  color: var(--lime); line-height: 1.15;
+}
+.duim__diff { display: block; margin-top: 1px; font-size: 11px; color: var(--text-66); }
+.duim__diff--meer { color: var(--orange); }
+
+/* Aanpassen begint op het detailscherm, over de kaart heen. */
+.detail__bewerk {
+  position: absolute; z-index: 2; right: 18px; top: 18px;
+  height: 42px; padding: 0 16px 0 12px; border-radius: 999px; border: 0;
+  background: rgba(12,26,23,.82); color: var(--text);
+  font-family: var(--f-display); font-size: 14px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+.detail__bewerk .ms { font-size: 19px; color: var(--lime); }
+
 /* ── Focus ──────────────────────────────────────────────────────────────── */
 :where(button, [href], input, [tabindex]):focus-visible {
   outline: 2px solid var(--lime); outline-offset: 3px;
