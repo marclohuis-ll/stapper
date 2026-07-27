@@ -24,7 +24,13 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main id="app" class="app" aria-live="polite"></main>
+  <!-- De tabbalk staat naast de schermen en niet erin: hij is de vaste ruggegraat
+       van de app. Binnen #schermen zou hij bij elke hertekening opnieuw gemaakt
+       worden, en dan kan de stip niet van tab naar tab schuiven. -->
+  <div id="app" class="app">
+    <main id="schermen" class="schermen" aria-live="polite"></main>
+    <nav id="tabs" class="tabbar" aria-label="Hoofdmenu" hidden></nav>
+  </div>
 
   <!-- Klassieke script-tag: app.js is een module en draait daarna, dus
        window.maplibregl bestaat dan al. -->

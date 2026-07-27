@@ -72,7 +72,22 @@ const STICKER_FOR = {
   cache: 'inventory_2',
 };
 
-const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','profiel'];
+const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','rondjes','boek','profiel'];
+
+/* ── Het menu ────────────────────────────────────────────────────────────────
+   Vier vaste plekken, en de rest van de app hangt eraan als een reis: je zoekt
+   een rondje, je hebt rondjes, je hebt gelopen, en dat ben jij. Alles wat lineair
+   is (instellen → zoeken → resultaten → detail → onderweg) komt hier bovenop te
+   liggen met een eigen knop onderin, zonder tabbalk — dat zijn stappen in een
+   handeling, geen bestemmingen.
+   ───────────────────────────────────────────────────────────────────────────── */
+const TABS = [
+  { screen: 'home',    icon: 'hiking',       label: 'Lopen' },
+  { screen: 'rondjes', icon: 'route',        label: 'Rondjes' },
+  { screen: 'boek',    icon: 'auto_stories', label: 'Boek' },
+  { screen: 'profiel', icon: 'person',       label: 'Profiel' },
+];
+const TAB_SCREENS = TABS.map((t) => t.screen);
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 const state = {
@@ -93,6 +108,9 @@ const state = {
 
   routes: [],
   routeId: null,
+  /* Waar het detailscherm vandaan geopend is. Een bewaard rondje open je uit
+   * Rondjes, en dan is "terug naar de zoekresultaten" een doodlopende weg. */
+  detailVan: 'resultaten',
   genStatus: '',
   genError: null,
   offTarget: false,
@@ -122,6 +140,9 @@ const state = {
   caches: [],
   gpxBron: null,              // bestandsnaam van de laatste import
   gpxMelding: null,           // {ok, tekst} — wat er van de laatste import terechtkwam
+
+  /* Welke versie draait er, en staat er een nieuwe klaar. Zie initVersie(). */
+  versie: { naam: null, uitgebracht: null, staat: 'onbekend' },
 
   /* Op het beginscherm zetten. `installer` is het beforeinstallprompt-event dat
    * Chrome ons geeft; dat mag je maar één keer gebruiken, dus we bewaren het. */
@@ -194,16 +215,13 @@ views.welkom = () => `
 
 views.home = () => `
   <div class="screen">
-    <div class="screen__body">
+    <div class="screen__body pad-tabs">
       <div class="sheet home">
         <div class="home__top">
           <div>
             <div class="home__weather">${esc(dagLabel())}</div>
             <h1 class="home__h1">Waar gaan<br>we heen?</h1>
           </div>
-          <button class="home__profile" data-go="profiel" aria-label="Stickerboek openen">
-            ${ico('auto_awesome')}
-          </button>
         </div>
 
         ${locationPill()}
@@ -229,15 +247,27 @@ views.home = () => `
           </button>
         </div>
 
-        ${state.routes.length ? `
-          <div class="section-head section-head--tight">Laatst gevonden</div>
-          <div class="trail">${state.routes.map(routeRow).join('')}</div>`
-        : state.saved.length ? `
-          <div class="section-head section-head--tight">Bewaarde rondjes</div>
-          <div class="trail">${state.saved.map(savedRouteRow).join('')}</div>` : ''}
+        ${state.routes.length || state.saved.length ? `
+          <button class="doorlink" data-go="rondjes">
+            <span class="doorlink__text">
+              <span class="doorlink__title">Je rondjes</span>
+              <span class="doorlink__sub">${esc(rondjesSamenvatting())}</span>
+            </span>
+            ${ico('chevron_right', 'doorlink__chev')}
+          </button>` : ''}
       </div>
     </div>
   </div>`;
+
+/** Wat er onder "Je rondjes" staat: liever de aantallen dan het woord "bekijken". */
+function rondjesSamenvatting() {
+  const d = [];
+  if (state.routes.length) d.push(`${state.routes.length} net gevonden`);
+  if (state.saved.length) {
+    d.push(state.saved.length === 1 ? '1 bewaard' : `${state.saved.length} bewaard`);
+  }
+  return d.join(' · ');
+}
 
 /* ── Op het beginscherm zetten ────────────────────────────────────────────────
    Stapper is een PWA en was ook al te installeren, maar alleen via het menu van
@@ -322,6 +352,194 @@ function installRegel() {
         : 'Via het menu van je browser: “App installeren” of “Toevoegen aan beginscherm”.'}</span>
     </span>
   </div>`;
+}
+
+/* ── Versie en bijwerken ────────────────────────────────────────────────────
+   Een PWA werkt zichzelf stil bij, en dat is precies het probleem: je duwt iets en
+   ziet de oude app, want de service worker bedient je uit de cache. Er was geen
+   moment waarop de app kon zeggen "er is een nieuwe versie" — dus is dat er nu.
+
+   De service worker wacht bewust (geen skipWaiting bij het installeren). Daardoor
+   bestaat de toestand "er staat een nieuwe versie klaar" écht, in plaats van dat we
+   hem moeten verzinnen.
+   ───────────────────────────────────────────────────────────────────────────── */
+let swReg = null;
+let herladenNaWissel = false;
+
+function versieRegel() {
+  const v = state.versie;
+  const klaar = v.staat === 'klaar';
+  const bezig = v.staat === 'zoeken' || v.staat === 'bijwerken';
+
+  /* Bij "klaar" is de kop de nieuwe versie, want dat is waar het over gaat. En de
+   * naam van de draaiende versie kan ontbreken: een versie van vóór deze wijziging
+   * kent de vraag niet. Die "ontwikkelversie" noemen zou onwaar zijn — het is een
+   * oude versie, en dat is precies waarom je hier staat. */
+  const kop = klaar ? `${v.nieuw || 'Nieuwe versie'} staat klaar`
+            : v.staat === 'geen-sw' ? 'Ontwikkelversie'
+            : v.naam || 'Stapper';
+
+  const sub = {
+    klaar: v.naam ? `Je draait nu ${v.naam}. Bijwerken herstart de app.`
+                  : 'Bijwerken herstart de app.',
+    zoeken: 'Kijken of er een nieuwe is…',
+    bijwerken: 'Bijwerken, een ogenblik…',
+    actueel: v.uitgebracht ? `Nieuwste versie, van ${v.uitgebracht}.` : 'Je hebt de nieuwste versie.',
+    'geen-sw': 'Draait zonder service worker — hier valt niets bij te werken.',
+    onbekend: 'Nog niet nagekeken.',
+  }[v.staat] || '';
+
+  return `
+  <div class="versie ${klaar ? 'versie--klaar' : ''}">
+    <span class="versie__top">
+      ${ico(klaar ? 'system_update' : 'verified')}
+      <span class="versie__tekst">
+        <span class="versie__naam">${esc(kop)}</span>
+        <span class="versie__sub">${esc(sub)}</span>
+      </span>
+    </span>
+    ${v.staat === 'geen-sw' ? '' : `
+      <button class="versie__knop ${klaar ? 'versie__knop--nu' : ''}"
+              data-act="${klaar ? 'werk-bij' : 'zoek-update'}" ${bezig ? 'disabled' : ''}>
+        ${klaar ? 'Nu bijwerken' : bezig ? 'Bezig…' : 'Nakijken'}
+      </button>`}
+  </div>`;
+}
+
+/**
+ * Staat er echt iets klaar?
+ *
+ * Een wachtende service worker is niet altijd een update. Bij de éérste
+ * installatie is er nog geen controller; die worker neemt dan zelf over en er valt
+ * niets bij te werken. Zonder dit onderscheid zegt de app "nieuwe versie klaar"
+ * tegen iemand die de app net voor het eerst opent, en blijft die melding staan
+ * nadat hij zichzelf al geactiveerd heeft.
+ */
+const staatVan = (reg) =>
+  (reg.waiting && navigator.serviceWorker.controller ? 'klaar' : 'actueel');
+
+async function initVersie(reg) {
+  swReg = reg;
+  state.versie.staat = staatVan(reg);
+  if (reg.waiting) volgWachtende(reg, reg.waiting);
+
+  reg.addEventListener('updatefound', () => {
+    const nieuw = reg.installing;
+    if (!nieuw) return;
+    nieuw.addEventListener('statechange', async () => {
+      if (nieuw.state !== 'installed') return;
+      volgWachtende(reg, nieuw);
+      state.versie.staat = staatVan(reg);
+      Object.assign(state.versie, await leesVersies(reg));
+      refreshIfShowing('profiel');
+    });
+  });
+
+  // Alleen herladen als wíj erom gevraagd hebben. Deze gebeurtenis vuurt ook bij
+  // de eerste installatie, en dan ongevraagd herladen is een sprong in het niets.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (herladenNaWissel) location.reload();
+  });
+
+  /* Vlak na register() is er nog geen actieve worker — die is nog aan het
+   * installeren — en dan is er niemand om de versie aan te vragen. `ready` wacht
+   * daarop. Zonder dit staat er bij de eerste start geen versienummer. */
+  const actief = await navigator.serviceWorker.ready;
+  Object.assign(state.versie, await leesVersies(actief));
+  state.versie.staat = staatVan(actief);
+  refreshIfShowing('profiel');
+
+  // Nog steeds geen naam? Dan was hij bezig. Eén keer opnieuw vragen is genoeg;
+  // blijft het leeg, dan staat er "Stapper" en dat is niet onwaar.
+  if (!state.versie.naam) {
+    setTimeout(async () => {
+      Object.assign(state.versie, await leesVersies(actief));
+      refreshIfShowing('profiel');
+    }, 2500);
+  }
+
+  // Bij terugkomst uit de achtergrond nog eens kijken: dat is precies het moment
+  // waarop je de app opent na een deploy.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.versie.staat === 'actueel') reg.update().catch(() => {});
+  });
+}
+
+/** Wordt de wachtende versie alsnog zelf actief, dan is er niets meer klaar te
+ *  zetten en moet de melding weg — anders blijft er een knop staan die niets doet. */
+function volgWachtende(reg, worker) {
+  worker.addEventListener('statechange', () => {
+    if (worker.state !== 'activated' && worker.state !== 'redundant') return;
+    if (state.versie.staat !== 'klaar') return;
+    state.versie.staat = 'actueel';
+    state.versie.nieuw = null;
+    leesVersies(reg).then((v) => {
+      Object.assign(state.versie, v);
+      refreshIfShowing('profiel');
+    });
+  });
+}
+
+/**
+ * De service worker kent zijn eigen versienummer; dat is één bron in plaats van een
+ * string die in twee bestanden uit elkaar loopt.
+ *
+ * Twee keer vragen: aan de draaiende én aan de wachtende. De draaiende kan een
+ * versie van vóór deze wijziging zijn en dan komt er geen antwoord — daarom mag het
+ * ontbreken van een naam nooit als "geen versie" gelezen worden.
+ */
+async function leesVersies(reg) {
+  const [nu, straks] = await Promise.all([
+    vraagAan(reg.active || navigator.serviceWorker.controller),
+    vraagAan(reg.waiting),
+  ]);
+  return {
+    naam: nu.versie || null,
+    uitgebracht: nu.uitgebracht || null,
+    nieuw: straks.versie || null,
+  };
+}
+
+/* Ruim wachten: bij de éérste installatie haalt de service worker 25 bestanden op
+ * en antwoordt hij niet binnen een seconde. Gemeten: met 1,5 s bleef het
+ * versienummer bij de eerste start leeg. */
+function vraagAan(sw, timeoutMs = 5000) {
+  if (!sw) return Promise.resolve({});
+  return new Promise((resolve) => {
+    const kanaal = new MessageChannel();
+    const op = setTimeout(() => resolve({}), timeoutMs);
+    kanaal.port1.onmessage = (e) => { clearTimeout(op); resolve(e.data || {}); };
+    try { sw.postMessage({ type: 'VERSION' }, [kanaal.port2]); }
+    catch { clearTimeout(op); resolve({}); }
+  });
+}
+
+async function zoekUpdate() {
+  if (!swReg) return;
+  state.versie.staat = 'zoeken';
+  render();
+  try {
+    await swReg.update();
+  } catch (e) {
+    console.warn('update zoeken mislukt:', e.message);
+  }
+  // update() is klaar zodra de controle gedaan is; een gevonden versie zit dan nog
+  // te installeren. De statechange-luisteraar zet 'klaar' als het zover is.
+  state.versie.staat = staatVan(swReg);
+  Object.assign(state.versie, await leesVersies(swReg));
+  refreshIfShowing('profiel');
+}
+
+function werkBij() {
+  const wacht = swReg && swReg.waiting;
+  if (!wacht) return;
+  herladenNaWissel = true;
+  state.versie.staat = 'bijwerken';
+  render();
+  wacht.postMessage({ type: 'SKIP_WAITING' });
+  // Vangnet: komt de wissel niet, dan herladen we alsnog. Beter een herstart die
+  // niets verandert dan een knop die blijft hangen op "bijwerken".
+  setTimeout(() => { if (herladenNaWissel) location.reload(); }, 4000);
 }
 
 async function installeer() {
@@ -653,7 +871,7 @@ views.detail = () => {
     <div class="screen__body pad-footer-l">
       <div class="sheet">
         <div class="detail__hero" id="detail-map">
-          <button class="detail__back" data-go="resultaten" aria-label="Terug">${ico('arrow_back')}</button>
+          <button class="detail__back" data-go="${state.detailVan}" aria-label="Terug">${ico('arrow_back')}</button>
           <button class="detail__bewerk" data-act="bewerk">${ico('gesture')}Aanpassen</button>
         </div>
 
@@ -723,9 +941,8 @@ function gpxRegel() {
   ${m ? `<p class="gpx-uitslag ${m.ok ? '' : 'gpx-uitslag--mis'}">
     ${ico(m.ok ? 'check_circle' : 'error')}<span>${esc(m.tekst)}</span></p>` : ''}
 
-  <p class="hint-line">Exporteer in c:geo een opgeslagen lijst als GPX, of gebruik een
-    pocket query, en laad dat bestand hier in. De caches blijven op dit toestel en
-    werken zonder bereik. Opnieuw inladen vult aan; dezelfde cache wordt bijgewerkt.
+  <p class="hint-line">Exporteer in c:geo een lijst als GPX en laad die hier in. De
+    caches blijven op dit toestel en werken zonder bereik.
     ${n ? `<button class="link-knop" data-act="gpx-wis">Alles wissen</button>` : ''}</p>`;
 }
 
@@ -1065,35 +1282,63 @@ const lockOverlay = () => `
     <button class="lock__back" data-act="close-lock">terug naar kindmodus</button>
   </div>`;
 
-views.profiel = () => {
+/* ── Rondjes ──────────────────────────────────────────────────────────────
+   Wat je hebt: net gevonden en bewaard. Stond eerder verspreid over het
+   beginscherm en het stickerboek, wat betekende dat je een bewaard rondje op twee
+   plekken kon tegenkomen en op geen van beide verwachtte.
+   ───────────────────────────────────────────────────────────────────────── */
+views.rondjes = () => `
+  <div class="screen">
+    <div class="screen__body pad-tabs">
+      <div class="sheet">
+        <div class="topbar">
+          <span class="topbar__titels">
+            <span class="topbar__title">Rondjes</span>
+            <span class="topbar__sub">${esc(rondjesSamenvatting() || 'nog niets')}</span>
+          </span>
+        </div>
+        <div class="pad">
+          ${state.routes.length ? `
+            <div class="section-head section-head--tight" style="margin-top:6px">Net gevonden</div>
+            <div class="trail">${state.routes.map(routeRow).join('')}</div>` : ''}
+
+          ${state.saved.length ? `
+            <div class="section-head section-head--tight" style="margin-top:26px">Bewaard</div>
+            <div class="trail">${state.saved.map(savedRouteRow).join('')}</div>` : ''}
+
+          ${!state.routes.length && !state.saved.length ? `
+            <div class="leeg">
+              ${ico('route', 'leeg__ico')}
+              <p class="leeg__tekst">Hier komen de rondjes die je zoekt te staan.
+                Tik op de bladwijzer bij een route om hem te bewaren.</p>
+              <button class="btn-cta btn-cta--sm" data-go="instellen">Zoek een rondje</button>
+            </div>` : ''}
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+/* ── Boek ─────────────────────────────────────────────────────────────────
+   Van het kind. Stickers, foto's en waar jullie geweest zijn — niets om in te
+   stellen, want dit is de bladzijde die hij zelf openslaat.
+   ───────────────────────────────────────────────────────────────────────── */
+views.boek = () => {
   const perSoort = {};
   for (const s of state.stickers) perSoort[s.category] = (perSoort[s.category] || 0) + 1;
-
   const km = state.walks.reduce((sum, w) => sum + (w.walkedM || 0), 0) / 1000;
 
   return `
   <div class="screen">
-    <div class="screen__body">
+    <div class="screen__body pad-tabs">
       <div class="sheet">
-        <div class="profiel__head">
-          <div class="profiel__nav">
-            <button class="btn-icon btn-icon--flat" data-go="home" aria-label="Terug">${ico('arrow_back')}</button>
-            <div class="profiel__kicker">Stickerboek van</div>
-          </div>
-          ${state.editProfile ? profielForm() : `
-          <div class="profiel__id">
-            <div class="avatar">${esc(state.profile.naam[0] || '?')}</div>
-            <div style="flex:1;min-width:0">
-              <h1 class="profiel__name">${esc(state.profile.naam)}, ${state.profile.leeftijd} jaar</h1>
-              <div class="profiel__stats">${esc(statsLine(km))}</div>
-            </div>
-            <button class="btn-icon btn-icon--flat" data-act="edit-profiel"
-                    aria-label="Naam en leeftijd wijzigen">${ico('edit')}</button>
-          </div>`}
+        <div class="topbar">
+          <span class="topbar__titels">
+            <span class="topbar__title">Boek van ${esc(state.profile.naam)}</span>
+            <span class="topbar__sub">${esc(statsLine(km))}</span>
+          </span>
         </div>
-
-        <div class="profiel__body">
-          <div class="section-head" style="margin-top:0">Verzameld</div>
+        <div class="pad">
+          <div class="section-head section-head--tight" style="margin-top:6px">Verzameld</div>
           <div class="stickers">
             ${CATEGORIES.map((c) => {
               const n = perSoort[c.key] || 0;
@@ -1115,13 +1360,71 @@ views.profiel = () => {
                 </figure>`).join('')}
             </div>` : ''}
 
-          ${state.saved.length ? `
-            <div class="section-head section-head--tight" style="margin-top:28px">Bewaarde rondjes</div>
-            ${state.saved.map(savedRouteRow).join('')}` : `
-            <p class="hint-line" style="margin-top:24px">Nog geen rondjes bewaard.
-              Tik op de bladwijzer bij een route om hem hier te zetten.</p>`}
+          ${state.walks.length ? `
+            <div class="section-head section-head--tight" style="margin-top:28px">Waar jullie liepen</div>
+            <div class="trail">${state.walks.slice().reverse().map(wandelingRij).join('')}</div>`
+          : `<div class="leeg" style="margin-top:26px">
+              ${ico('footprint', 'leeg__ico')}
+              <p class="leeg__tekst">Nog niets gelopen. Na een wandeling komen hier
+                de stickers en de plekken waar jullie waren.</p>
+            </div>`}
+        </div>
+      </div>
+    </div>
+  </div>`;
+};
 
-          <div class="section-head" style="margin-top:30px">Voor de grote mensen</div>
+/* Een gelopen wandeling. Geen knop: er valt niets te openen, het is een herinnering. */
+const wandelingRij = (w) => `
+  <div class="wandeling">
+    <span class="wandeling__ico">${ico(w.voltooid ? 'flag' : 'footprint')}</span>
+    <span class="wandeling__text">
+      <span class="wandeling__naam">${esc(w.naam || 'Een rondje')}</span>
+      <span class="wandeling__meta">${esc(wandelingMeta(w))}</span>
+    </span>
+  </div>`;
+
+function wandelingMeta(w) {
+  const d = [];
+  if (w.at) d.push(new Date(w.at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' }));
+  if (w.walkedM) d.push(`${komma(w.walkedM / 1000)} km`);
+  if (w.punten) d.push(w.punten === 1 ? '1 punt gevonden' : `${w.punten} punten gevonden`);
+  return d.join(' · ');
+}
+
+/* ── Profiel ──────────────────────────────────────────────────────────────
+   Wie er loopt, en alles wat je één keer instelt en daarna vergeet. Bewust
+   gescheiden van het boek: dat is van hem, dit is van jou.
+   ───────────────────────────────────────────────────────────────────────── */
+views.profiel = () => {
+  const km = state.walks.reduce((sum, w) => sum + (w.walkedM || 0), 0) / 1000;
+  const tempo = Math.round(22 * (kidFactor(state.profile.leeftijd) / 1.85));
+
+  return `
+  <div class="screen">
+    <div class="screen__body pad-tabs">
+      <div class="sheet">
+        <div class="profiel__head">
+          ${state.editProfile ? profielForm() : `
+          <div class="profiel__id">
+            <div class="avatar">${esc(state.profile.naam[0] || '?')}</div>
+            <div style="flex:1;min-width:0">
+              <h1 class="profiel__name">${esc(state.profile.naam)}, ${state.profile.leeftijd} jaar</h1>
+              <div class="profiel__stats">rekent met ± ${tempo} min per kilometer</div>
+            </div>
+            <button class="btn-icon btn-icon--flat" data-act="edit-profiel"
+                    aria-label="Naam en leeftijd wijzigen">${ico('edit')}</button>
+          </div>`}
+        </div>
+
+        <div class="profiel__body">
+          <div class="cijfers">
+            ${cijfer(komma(km), km === 1 ? 'kilometer' : 'kilometers')}
+            ${cijfer(state.walks.length, state.walks.length === 1 ? 'keer op pad' : 'keer op pad')}
+            ${cijfer(state.stickers.length, state.stickers.length === 1 ? 'sticker' : 'stickers')}
+          </div>
+
+          <div class="section-head">Voor de grote mensen</div>
 
           ${state.editSetting === 'code' ? settingForm({
             key: 'code', label: 'Oudercode (vier cijfers)', value: state.parentCode || '',
@@ -1140,6 +1443,8 @@ views.profiel = () => {
 
           ${gpxRegel()}
 
+          <div class="section-head">De app</div>
+          ${versieRegel()}
           ${installRegel()}
 
           <div class="dubbel">
@@ -1159,6 +1464,12 @@ views.profiel = () => {
     </div>
   </div>`;
 };
+
+const cijfer = (waarde, label) => `
+  <div class="cijfer">
+    <span class="cijfer__n">${esc(String(waarde))}</span>
+    <span class="cijfer__label">${esc(label)}</span>
+  </div>`;
 
 /* Het profiel was hardcoded op de naam uit het designdocument. Dat staat in het
  * stickerboek én in de kindmodus, dus het moet te wijzigen zijn. */
@@ -1216,7 +1527,8 @@ const savedRouteRow = (r) => `
   </button>`;
 
 /* ── Render ─────────────────────────────────────────────────────────────── */
-const app = document.getElementById('app');
+const app = document.getElementById('schermen');
+const tabs = document.getElementById('tabs');
 let lastScreen = null;
 let harvester = null;
 let editor = null;              // actief op het bewerkscherm, anders null
@@ -1224,6 +1536,50 @@ let editor = null;              // actief op het bewerkscherm, anders null
 // De resultaatkaartjes tekenen de echte routegeometrie als SVG; via window zodat
 // de template-string erbij kan zonder de views tot modules te maken.
 window.__routeSvg = (r) => mapview.routeMiniSvg(r);
+
+/* ── De tabbalk ──────────────────────────────────────────────────────────────
+   Eén keer gebouwd, daarna alleen bijgewerkt. Dat moet ook: staat hij binnen de
+   schermen, dan wordt hij bij elke hertekening opnieuw gemaakt en kan de stip niet
+   van tab naar tab schuiven — en juist dat schuiven is wat losse pagina's tot één
+   app maakt.
+
+   De stip is geen pil achter een icoon maar de "hier ben ik"-stip van de kaart, op
+   een gestippeld paadje. Dezelfde opbouw als daar: donkere baan, lime streepjes,
+   gevulde stip met een ring en een gloed. De app tekent zijn eigen navigatie in de
+   taal van waar hij over gaat.
+   ───────────────────────────────────────────────────────────────────────────── */
+function bouwTabs() {
+  tabs.innerHTML = `
+    <span class="tabbar__pad" aria-hidden="true">
+      <span class="tabbar__baan"></span>
+      <span class="tabbar__hier"></span>
+    </span>
+    ${TABS.map((t) => `
+      <button class="tab" data-tab="${t.screen}">
+        ${ico(t.icon, 'tab__ico')}
+        <span class="tab__label">${t.label}</span>
+      </button>`).join('')}`;
+
+  tabs.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tab]');
+    if (b) go(b.dataset.tab);
+  });
+}
+
+function paintTabs() {
+  const i = TAB_SCREENS.indexOf(state.screen);
+  tabs.hidden = i < 0;
+  if (i < 0) return;
+
+  // Midden van het vak: het paadje loopt door de hele balk, de stip staat waar je
+  // bent. Als percentage, zodat vier tabs of vijf niets aan de CSS verandert.
+  tabs.style.setProperty('--hier', `${((i + 0.5) / TABS.length) * 100}%`);
+  tabs.querySelectorAll('.tab').forEach((b, n) => {
+    b.classList.toggle('tab--hier', n === i);
+    if (n === i) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+}
 
 /* Blob-URL's voor de foto's. Ze worden bij elke hertekening opnieuw gemaakt, dus
  * de oude moeten vrijgegeven worden — anders lekt elke render geheugen. */
@@ -1252,6 +1608,7 @@ function render() {
   if (newBody && keepScroll) newBody.scrollTop = keepScroll;
 
   lastScreen = state.screen;
+  paintTabs();
   focusCode();
   mountMap();
 }
@@ -1959,6 +2316,7 @@ app.addEventListener('click', (e) => {
 
     case 'open-route':
       state.routeId = Number(el.dataset.route);
+      state.detailVan = state.screen === 'rondjes' ? 'rondjes' : 'resultaten';
       state.offline = { fraction: 0, busy: false, done: 0, total: 0 };
       go('detail');
       checkOffline();
@@ -1978,6 +2336,7 @@ app.addEventListener('click', (e) => {
       // Bewaarde rondjes doen als de zojuist gegenereerde: vooraan zetten en openen.
       state.routes = [r, ...state.routes.filter((x) => x.id !== r.id)];
       state.routeId = 0;
+      state.detailVan = 'rondjes';
       go('detail');
       break;
     }
@@ -2032,6 +2391,9 @@ app.addEventListener('click', (e) => {
 
     case 'installeer':     installeer(); break;
     case 'install-weg':    state.installKaartWeg = true; render(); break;
+
+    case 'zoek-update':    zoekUpdate(); break;
+    case 'werk-bij':       werkBij(); break;
     case 'cancel-setting': state.editSetting = null;  render(); break;
 
     case 'pauze': togglePauze(); break;
@@ -2176,6 +2538,8 @@ function fromHash() {
 
 window.addEventListener('hashchange', () => enter(fromHash() || 'welkom'));
 
+bouwTabs();
+
 const initial = fromHash();
 if (initial) { enter(initial); } else { location.replace('#/welkom'); enter('welkom'); }
 
@@ -2210,6 +2574,7 @@ const WANT_SW = new URLSearchParams(location.search).has('sw');
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   if (DEV_HOST && !WANT_SW) {
+    state.versie.staat = 'geen-sw';
     navigator.serviceWorker.getRegistrations()
       .then((rs) => Promise.all(rs.map((r) => r.unregister())))
       .then(() => caches.keys())
@@ -2217,7 +2582,15 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       .catch(() => {});
   } else {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('sw:', e.message));
+      navigator.serviceWorker.register('./sw.js')
+        .then((reg) => initVersie(reg))
+        .catch((e) => {
+          console.warn('sw:', e.message);
+          state.versie.staat = 'geen-sw';
+          refreshIfShowing('profiel');
+        });
     });
   }
+} else {
+  state.versie.staat = 'geen-sw';
 }

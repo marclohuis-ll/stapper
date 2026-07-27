@@ -101,6 +101,76 @@ button { font-family: inherit; color: inherit; }
   }
 }
 
+/* ── DE TABBALK ─────────────────────────────────────────────────────────────
+   De vaste ruggegraat. Geen pil achter het actieve icoon — dat is navigatie die
+   over de app heen ligt. In plaats daarvan de gestippelde lime paadjes van de
+   kaart met de "hier ben ik"-stip erop, in precies dezelfde opbouw: donkere baan,
+   lime streepjes, gevulde stip met een ring en een gloed. De verticale variant
+   staat al achter de routelijsten (.trail); dit is die horizontaal.
+   ───────────────────────────────────────────────────────────────────────────── */
+.schermen { position: absolute; inset: 0; }
+
+.tabbar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; align-items: stretch;
+  padding: 9px 4px calc(14px + env(safe-area-inset-bottom));
+  background: rgba(10,21,18,.9);
+  border-top: 1px solid rgba(201,242,110,.13);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+.tabbar[hidden] { display: none; }
+
+.tab {
+  flex: 1; min-width: 0; border: 0; background: transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 4px 2px 12px;                  /* ruimte onderin voor het paadje */
+  color: var(--text-40);
+  transition: color .18s var(--ease);
+}
+.tab__ico {
+  font-size: 23px;
+  transition: transform .22s var(--ease);
+  /* Niet-actieve iconen zijn omlijnd, het actieve is gevuld: dat verschil leest
+     sneller dan alleen kleur, en werkt ook als je slecht kleuren ziet. */
+  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+.tab__label {
+  font-size: 10px; font-weight: 600; letter-spacing: .01em; line-height: 1;
+}
+.tab--hier { color: var(--lime); }
+.tab--hier .tab__ico {
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+  transform: translateY(-1px);
+}
+
+/* Het paadje loopt door de hele balk; de stip staat waar je bent.
+   Deze doos is exact zo breed als de rij tabs (dezelfde 4 px als de balk),
+   want `--hier` is een percentage: valt hij op een smallere doos, dan schuift de
+   stip tot 7 px uit het midden van zijn tab — gemeten. De streepjes springen wél
+   in, via de baan zelf, zodat het er nog steeds naar de randen toe uitloopt. */
+.tabbar__pad {
+  position: absolute; left: 4px; right: 4px;
+  bottom: calc(13px + env(safe-area-inset-bottom));
+  height: 6px; pointer-events: none;
+}
+.tabbar__baan {
+  position: absolute; left: 10px; right: 10px; top: 2px; height: 2px;
+  border-radius: 2px;
+  /* Dezelfde streeplengte als de voetpaden op de kaart. */
+  background: repeating-linear-gradient(to right,
+    rgba(201,242,110,.42) 0 4px, transparent 4px 10px);
+}
+.tabbar__hier {
+  position: absolute; top: -1px; left: var(--hier, 12.5%);
+  width: 8px; height: 8px; margin-left: -4px; border-radius: 999px;
+  background: var(--lime);
+  box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 9px rgba(201,242,110,.16);
+  transition: left .34s cubic-bezier(.34, 1.3, .48, 1);
+}
+
+.pad-tabs { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+
 /* Screen scaffolding ------------------------------------------------------- */
 .screen        { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
 .screen__body  { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
@@ -126,7 +196,8 @@ button { font-family: inherit; color: inherit; }
 .route-row__text, .route-row__name, .route-row__meta,
 .rcard__map, .rcard__body, .rcard__name, .rcard__desc,
 .pair__text, .pair__k, .pair__v,
-.poi__name, .poi__meta { display: block; }
+.poi__name, .poi__meta,
+.doorlink__text, .doorlink__title, .doorlink__sub { display: block; }
 
 /* Shared bits -------------------------------------------------------------- */
 .section-head {
@@ -270,13 +341,6 @@ button { font-family: inherit; color: inherit; }
   font-family: var(--f-display); font-weight: 900; font-size: 38px;
   line-height: .98; letter-spacing: -.04em; margin: 6px 0 0; color: var(--text-bright);
 }
-.home__profile {
-  width: 48px; height: 48px; border-radius: 18px; flex: none;
-  border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06);
-  cursor: pointer; display: grid; place-items: center;
-}
-.home__profile .ms { font-size: 23px; color: var(--lime); }
-
 .locpill {
   display: inline-flex; gap: 8px; align-items: center; margin-top: 18px;
   padding: 9px 14px; border-radius: 999px; background: rgba(111,227,208,.12);
@@ -793,9 +857,7 @@ button { font-family: inherit; color: inherit; }
     radial-gradient(280px 200px at 8% 96%, rgba(30,111,82,.5), transparent 70%),
     var(--bg-profile);
 }
-.profiel__nav { display: flex; align-items: center; gap: 12px; }
-.profiel__kicker { font-size: 13px; color: var(--text-75); }
-.profiel__id { display: flex; gap: 16px; align-items: center; margin-top: 18px; }
+.profiel__id { display: flex; gap: 16px; align-items: center; }
 .avatar {
   width: 66px; height: 66px; border-radius: 22px; flex: none; background: var(--lime);
   display: grid; place-items: center; box-shadow: 0 12px 30px rgba(201,242,110,.3);
@@ -807,7 +869,10 @@ button { font-family: inherit; color: inherit; }
 }
 .profiel__stats { font-size: 13px; color: var(--text-75); margin-top: 3px; }
 .profiel__body { padding: 22px 22px calc(34px + env(safe-area-inset-bottom)); }
-.stickers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+/* Drie kolommen en niet vier: er zijn negen soorten, dus 3×3 vult precies vol.
+   Op vier kolommen bleef de negende sticker alleen op een regel achter, en een
+   stickerboek met een wees erin is geen stickerboek. Ze worden er ook groter van. */
+.stickers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .sticker-cell {
   aspect-ratio: 1; border-radius: 22px; display: grid; place-items: center;
   background: var(--panel-soft); border: 1px dashed rgba(255,255,255,.14);
@@ -1082,6 +1147,105 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
   cursor: pointer; display: flex; align-items: center; gap: 6px;
 }
 .detail__bewerk .ms { font-size: 19px; color: var(--lime); }
+
+/* ── ONDERDELEN VAN DE TABSCHERMEN ──────────────────────────────────────────
+   Vier bestemmingen betekent vier lege toestanden en drie manieren om ergens
+   heen te wijzen. Die verdienen echte vorm, want een lege tab is de eerste die
+   iemand opent.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Titel met ondertitel in de balk bovenaan een tabscherm. */
+.topbar__titels { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* Van het beginscherm naar je rondjes. Rustiger dan een tegel: het is een
+   verwijzing, geen aanbod. */
+.doorlink {
+  width: 100%; margin-top: 18px; padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  border-radius: 22px; border: 1px solid var(--line); background: var(--panel-soft);
+  color: var(--text); font: inherit; cursor: pointer;
+  transition: border-color .2s var(--ease);
+}
+.doorlink:hover { border-color: rgba(201,242,110,.3); }
+.doorlink__text { flex: 1; min-width: 0; }
+.doorlink__title { font-family: var(--f-display); font-weight: 700; font-size: 15.5px; }
+.doorlink__sub { font-size: 12.5px; color: var(--text-66); margin-top: 2px; }
+.doorlink__chev { font-size: 20px !important; color: var(--text-40); }
+
+/* Een lege tab is een uitnodiging, niet een mededeling. */
+.leeg {
+  margin: 30px 0; padding: 30px 24px; text-align: center;
+  border-radius: 26px; border: 1px dashed rgba(201,242,110,.22);
+  background: rgba(201,242,110,.04);
+}
+.leeg__ico { font-size: 30px !important; color: var(--lime); opacity: .7; }
+.leeg__tekst {
+  margin: 12px 0 18px; font-size: 13.5px; line-height: 1.6; color: var(--text-72);
+}
+.leeg .btn-cta--sm { margin: 0 auto; }
+
+/* Drie cijfers over het lopen. Geen kaartjes met randen: alleen de getallen groot,
+   met haarlijnen ertussen. */
+.cijfers {
+  display: flex; align-items: stretch; margin: 4px 0 6px;
+  border-radius: 22px; background: var(--panel-soft); border: 1px solid var(--line);
+  overflow: hidden;
+}
+.cijfer { flex: 1; padding: 15px 8px; text-align: center; min-width: 0; }
+.cijfer + .cijfer { border-left: 1px solid var(--line); }
+.cijfer__n {
+  display: block; font-family: var(--f-display); font-weight: 800; font-size: 23px;
+  letter-spacing: -.03em; color: var(--lime-glow); line-height: 1;
+}
+.cijfer__label {
+  display: block; margin-top: 5px; font-size: 11px; color: var(--text-66);
+}
+
+/* Een gelopen wandeling in het boek. Geen knop: er valt niets te openen. */
+.wandeling { display: flex; gap: 14px; align-items: center; padding: 10px 0; }
+.wandeling__ico {
+  width: 34px; height: 34px; border-radius: 12px; flex: none;
+  background: var(--bg-poi); border: 1px solid rgba(201,242,110,.22);
+  display: grid; place-items: center;
+}
+.wandeling__ico .ms { font-size: 17px; color: var(--lime); }
+.wandeling__text { flex: 1; min-width: 0; }
+.wandeling__naam {
+  display: block; font-family: var(--f-display); font-weight: 700; font-size: 15px;
+}
+.wandeling__meta { display: block; font-size: 12px; color: var(--text-66); margin-top: 2px; }
+
+/* ── VERSIE EN BIJWERKEN ────────────────────────────────────────────────────
+   Twee toestanden die er echt anders uit moeten zien: "je bent bij" is rustig,
+   "er staat iets klaar" vraagt om een tik. Zonder die tweedeling wordt het een
+   knop waar je nooit meer naar kijkt.
+   ───────────────────────────────────────────────────────────────────────────── */
+.versie {
+  margin-top: 10px; padding: 15px 16px; border-radius: 22px;
+  border: 1px solid var(--line); background: var(--panel-soft);
+}
+.versie__top { display: flex; gap: 13px; align-items: flex-start; }
+.versie__top > .ms { font-size: 21px; color: var(--mint); flex: none; }
+.versie__tekst { flex: 1; min-width: 0; }
+.versie__naam {
+  display: block; font-family: var(--f-display); font-weight: 700; font-size: 15.5px;
+}
+.versie__sub {
+  display: block; font-size: 12.5px; line-height: 1.5; color: var(--text-66); margin-top: 2px;
+}
+.versie__knop {
+  margin-top: 13px; width: 100%; height: 44px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14); background: transparent; color: var(--text);
+  font-family: var(--f-display); font-size: 14.5px; font-weight: 700; cursor: pointer;
+}
+.versie__knop[disabled] { opacity: .45; cursor: default; }
+
+.versie--klaar { border-color: rgba(201,242,110,.34); background: rgba(201,242,110,.08); }
+.versie--klaar .versie__top > .ms { color: var(--lime); }
+.versie__knop--nu {
+  border: 0; background: var(--lime); color: var(--ink);
+  box-shadow: 0 10px 26px rgba(201,242,110,.22);
+}
 
 /* ── OP HET BEGINSCHERM ZETTEN ──────────────────────────────────────────────
    Eén kaart op het beginscherm, wegtikbaar. Muntgroen en niet lime: het is een

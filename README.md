@@ -191,7 +191,8 @@ En in de console van de app:
 | --- | --- |
 | [index.html](index.html) | shell: fonts, MapLibre, `#app` |
 | [styles.css](styles.css) | tokens + één sectie per scherm |
-| [app.js](app.js) | schermen, state, routing |
+| [app.js](app.js) | schermen, state, routing, tabbalk, bijwerken |
+| [sw.js](sw.js) | service worker: app-shell offline, en wacht op *bijwerken* |
 | [src/generator.js](src/generator.js) | de routegenerator |
 | [src/pois.js](src/pois.js) | categorieën, de onzichtbare tegel-oogster, Overpass-aanvulling |
 | [src/router.js](src/router.js) | BRouter, lus en heen-en-terug |
@@ -227,11 +228,96 @@ linken.
 | `#/bewerken` | Route verslepen op een schermvullende kaart | echt |
 | `#/onderweg` | Live wandeling: kaart, voortgang, volgend punt | echt |
 | `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
-| `#/profiel` | Stickerboek, bewaarde rondjes, export | echt |
+| `#/rondjes` | Net gevonden en bewaarde rondjes | echt |
+| `#/boek` | Stickerboek: stickers, foto's, gelopen wandelingen | echt |
+| `#/profiel` | Kind, instellingen, appversie en bijwerken | echt |
+
+## Navigatie
+
+De app had negen schermen en geen menu: je kwam ergens via een knop en je vond de
+weg terug niet. Nu is er een tabbalk met vier vaste bestemmingen, en daar hangt de
+rest aan.
+
+| Tab | Wat er staat |
+| --- | --- |
+| **Lopen** | begroeting, locatiestatus, en de twee manieren om te beginnen |
+| **Rondjes** | net gevonden en bewaarde rondjes |
+| **Boek** | van het kind: stickers, foto's, waar jullie liepen |
+| **Profiel** | wie er loopt, de instellingen, en de appversie |
+
+Wat *lineair* is krijgt géén tabbalk: instellen → zoeken → resultaten → detail →
+bewerken → onderweg → kindmodus. Dat zijn stappen in één handeling, met een eigen
+knop onderin en een terugknop bovenin — geen bestemmingen. De kindmodus mag de
+tabbalk trouwens ook niet hebben: die zit achter een code.
+
+### Het paadje onderin
+
+De actieve tab is geen pil achter een icoon. Onderaan de balk loopt een gestippeld
+lime paadje met de **"hier ben ik"-stip** erop, in exact dezelfde opbouw als op de
+kaart: donkere baan, lime streepjes, gevulde stip met een ring en een gloed. Die
+stip schuift als je van tab wisselt.
+
+Dat is geen versiering. De verticale variant van datzelfde paadje staat al achter de
+routelijsten (`.trail`), en de app gaat over waar je bent op een route — dus tekent
+hij zijn navigatie in de taal van zijn eigen inhoud. Het onderscheid tussen actief
+en niet zit bovendien in drie dingen tegelijk (kleur, gevuld versus omlijnd icoon,
+en de stip), zodat het ook leesbaar is als je kleuren slecht ziet.
+
+De balk staat in `index.html` naast `#schermen` en niet erin. Dat moet: binnen de
+schermen wordt hij bij elke hertekening opnieuw gemaakt, en dan kan de stip niet
+schuiven — precies het schuiven dat losse pagina's tot één app maakt.
+
+Twee dingen die de meting rechtzette:
+
+- De stip zat tot **7 px naast het midden** van zijn tab. Het paadje was 14 px
+  ingesprongen, dus het percentage viel op een smallere doos dan de rij tabs. De
+  doos is nu even breed als de tabs; alleen de streepjes springen in.
+- Een bewaard rondje open je uit *Rondjes*, maar de terugknop op het detailscherm
+  ging altijd naar de zoekresultaten — die dan leeg zijn. Het detailscherm onthoudt
+  nu waar je vandaan kwam.
+
+## Bijwerken
+
+Een PWA werkt zichzelf stil bij, en dat is het probleem: je duwt iets, opent de app,
+en ziet de oude versie omdat de service worker je uit de cache bedient. Er was geen
+moment waarop de app kon zeggen dat er iets nieuws was.
+
+Onder *Profiel → De app* staat nu de draaiende versie en één knop:
+
+| Toestand | Wat je ziet |
+| --- | --- |
+| bij | `stapper-v6` · "Nieuwste versie, van 27 juli 2026." · **Nakijken** |
+| nieuwe versie klaar | `stapper-v7 staat klaar` · "Je draait nu stapper-v6." · **Nu bijwerken** |
+| geen service worker | "Ontwikkelversie" · geen knop, want er valt niets bij te werken |
+
+Daarvoor moest de service worker veranderen. Er stond `skipWaiting()` in de
+installatie, waardoor een nieuwe versie het meteen overnam terwijl het geopende
+scherm nog de oude code draaide: nieuwe cache, oud scherm, en geen toestand om een
+knop aan te hangen. Nu wacht hij tot de app `SKIP_WAITING` stuurt, en herlaadt de
+app zichzelf zodra de wissel gedaan is.
+
+Het versienummer komt uit de service worker zelf (één bron in plaats van een string
+die in twee bestanden uiteenloopt), opgevraagd over een `MessageChannel`.
+
+Vier dingen die pas bij het uitproberen bleken:
+
+- **Een wachtende service worker is niet altijd een update.** Bij de eerste
+  installatie is er nog geen controller; die worker neemt zelf over. Zonder dat
+  onderscheid zei de app "nieuwe versie klaar" tegen iemand die de app net voor het
+  eerst opende, en bleef die melding staan nadat hij al geactiveerd was.
+- **De draaiende versie kan de vraag niet altijd beantwoorden.** Een versie van
+  vóór deze wijziging kent het bericht niet. Dat mocht geen "ontwikkelversie" heten,
+  want dat is onwaar — het is een oude versie, en dat is precies waarom je er staat.
+  Bij een wachtende update vragen we het nummer daarom aan de wachtende worker.
+- **Bij de eerste start is hij te druk.** Hij haalt 25 bestanden op en antwoordde
+  niet binnen 1,5 s, waardoor het versienummer leeg bleef. Nu 5 s, met één herkansing.
+- **`controllerchange` vuurt ook bij de eerste installatie.** Daarop ongevraagd
+  herladen is een sprong in het niets, dus herlaadt de app alleen als hij er zelf om
+  gevraagd heeft.
 
 ## Instellingen
 
-Onderin het stickerboek, onder "Voor de grote mensen":
+Op de tab **Profiel**, onder "Voor de grote mensen" en "De app":
 
 - **Naam en leeftijd** van het kind. De leeftijd bepaalt het looptempo en dus de
   tijdschattingen.

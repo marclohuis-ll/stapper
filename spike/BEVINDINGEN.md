@@ -635,3 +635,113 @@ op localhost meteen fout. Relatief lost het op tegen de manifest-URL en klopt he
 op beide plekken. En de 192-maskable is erbij gekomen: Android kiest per
 beeldpuntdichtheid en schaalt 512 → 192 zichtbaar zachter dan een icoon dat op maat
 getekend is.
+
+---
+
+# 12. Navigatie: van negen losse schermen naar één app
+
+Negen schermen en geen menu. Je kwam ergens via een knop en vond de weg niet terug —
+"een set losse pagina's zonder samenhang", en dat was het ook.
+
+## Welke schermen bestemmingen zijn, en welke stappen
+
+Niet alles verdient een tab. De scheiding die werkt:
+
+| | |
+| --- | --- |
+| **bestemmingen** (tabbalk) | Lopen, Rondjes, Boek, Profiel |
+| **stappen** (geen tabbalk, eigen knop onderin) | instellen, startpunt, zoeken, resultaten, detail, bewerken, onderweg, kindmodus |
+
+De stappen zijn een handeling met een begin en een eind; een tabbalk eronder zou
+uitnodigen om er middenin weg te lopen. En de kindmodus mág hem niet hebben: die zit
+achter een oudercode.
+
+Het oude `profiel` was stickerboek én instellingen in één. Dat is nu **Boek** (van
+het kind: stickers, foto's, waar jullie liepen) en **Profiel** (van jou: wie er
+loopt, instellingen, versie). Bewaarde rondjes stonden verspreid over het
+beginscherm én het stickerboek — je kon ze dus op twee plekken tegenkomen en op geen
+van beide verwachten. Nu staan ze in **Rondjes**.
+
+## De stip in plaats van een pil
+
+De actieve tab is geen gevulde pil achter een icoon. Onderaan de balk loopt het
+gestippelde lime paadje van de kaart, met de "hier ben ik"-stip erop: donkere baan,
+lime streepjes, gevulde stip met ring en gloed — dezelfde opbouw als in
+`src/map-style.js` en `src/mapview.js`.
+
+Dat is geen versiering maar dezelfde gedachte die al in de app zat: achter de
+routelijsten staat `.trail`, precies dat paadje verticaal. De app gaat over waar je
+bent op een route, dus tekent hij zijn navigatie in de taal van zijn inhoud.
+
+Het verschil actief/niet zit in drie dingen tegelijk — kleur, gevuld tegen omlijnd
+icoon (`font-variation-settings: 'FILL'`), en de stip — zodat het ook leest als je
+kleuren slecht ziet.
+
+## Drie dingen die de meting rechtzette
+
+1. **De balk moet buiten de schermen staan.** `render()` vervangt de hele inhoud van
+   `#schermen`. Zat de balk daarin, dan werd hij bij elke hertekening opnieuw
+   gemaakt en kon de stip niet schuiven — en juist dat schuiven maakt losse pagina's
+   tot één app. Vandaar `#app > #schermen + #tabs` in de HTML.
+2. **De stip zat tot 7 px naast het midden.** Gemeten per tab: +7, +2, −2, −7. Het
+   paadje was 14 px ingesprongen, dus `--hier` als percentage viel op een smallere
+   doos dan de rij tabs — naar de randen toe loopt dat op. De doos is nu even breed
+   als de tabs, alleen de streepjes springen in. Daarna: 0, 0, 0, 0.
+3. **Een bewaard rondje liep dood.** Dat open je nu uit *Rondjes*, maar de terugknop
+   op het detailscherm ging altijd naar de zoekresultaten — die dan leeg zijn. Het
+   detailscherm onthoudt waar je vandaan kwam.
+
+Verder: negen stickersoorten op vier kolommen liet er één alleen op een regel
+achter. Drie kolommen vult 3×3 precies vol, en de stickers worden er groter van.
+
+---
+
+# 13. Bijwerken: een knop die niet kon bestaan
+
+Een PWA werkt zichzelf stil bij, en dat is het probleem: je duwt iets, opent de app
+op je telefoon, en ziet de oude versie omdat de service worker je uit de cache
+bedient. Er was geen moment waarop de app kon zeggen dat er iets nieuws was.
+
+## Waarom `skipWaiting()` in de weg zat
+
+In de installatie stond `self.skipWaiting()`. Daarmee neemt een nieuwe service worker
+het meteen over — terwijl de geopende pagina nog de óude `app.js` draait. Resultaat:
+nieuwe cache, oud scherm, en geen enkele toestand waaraan je een knop kon hangen.
+
+Nu wacht hij, en gaat pas door op `SKIP_WAITING` uit de app. Dan is er wél een
+toestand: *er staat een nieuwe versie klaar*. Behalve bij de éérste installatie —
+daar is niets om te onderbreken, dus `if (!self.registration.active) skipWaiting()`.
+
+Het versienummer komt uit de service worker zelf, over een `MessageChannel`. Eén
+bron in plaats van een string die in twee bestanden uiteenloopt.
+
+## Vier dingen die pas bij het uitproberen bleken
+
+1. **Een wachtende worker is niet altijd een update.** Bij de eerste installatie is
+   er nog geen controller; die worker activeert zichzelf. Zonder dat onderscheid zei
+   de app "nieuwe versie klaar" tegen iemand die de app net voor het eerst opende, en
+   bleef die melding staan nadat hij al geactiveerd was. Vandaar
+   `reg.waiting && navigator.serviceWorker.controller`.
+2. **De draaiende versie kan de vraag niet altijd beantwoorden.** Een versie van
+   vóór deze wijziging kent het bericht niet en zwijgt. Dat mocht geen
+   "ontwikkelversie" heten — dat is onwaar, het is een óude versie, en dat is precies
+   waarom je op dat scherm staat. Bij een wachtende update wordt het nummer daarom
+   aan de wáchtende worker gevraagd, en is de kop "stapper-v7 staat klaar".
+3. **Bij de eerste start is hij te druk om te antwoorden.** Hij haalt 25 bestanden
+   op; met een tijdslimiet van 1,5 s bleef het versienummer leeg. Nu 5 s, plus één
+   herkansing na 2,5 s.
+4. **`controllerchange` vuurt ook bij de eerste installatie.** Daarop ongevraagd
+   herladen is een sprong in het niets, dus herlaadt de app alleen als hij zelf om de
+   wissel heeft gevraagd. Met een vangnet van 4 s, want een knop die op "bijwerken"
+   blijft hangen is erger dan een herstart die niets verandert.
+
+## Wat de devserver hier niet kan
+
+`registration.update()` mislukt op `tools/serve.ps1` met *"Failed to update a
+ServiceWorker … Not found"*: die TcpListener struikelt over het verzoek waarmee de
+browser `sw.js` opnieuw ophaalt. De live site serveert `sw.js` correct
+(`application/javascript`, 200), dus de bijwerkstroom is daar getest en niet lokaal.
+
+Nog iets om te weten: **deze ene update landt nog op de oude manier.** De service
+worker die nu op je telefoon staat heeft `skipWaiting()` en neemt het dus meteen
+over. Vanaf de volgénde versie krijg je de knop.

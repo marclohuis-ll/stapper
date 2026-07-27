@@ -7,12 +7,20 @@
    vertrek binnenhalen).
 
    Strategie voor eigen bestanden: uit de cache serveren en ondertussen
-   vernieuwen. Dat maakt de app snel, en na een deploy zie je de nieuwe versie
-   bij de tweede keer openen. Dus als je iets pusht en het lijkt oud: nog een
-   keer openen.
+   vernieuwen. Dat maakt de app snel — en het betekent dat een nieuwe versie pas
+   de tweede keer te zien is.
+
+   Daarom wacht een nieuwe versie hier expliciet. Er stond eerder `skipWaiting()`
+   in de installatie, waardoor een nieuwe service worker het meteen overnam terwijl
+   de geopende app nog de oude code draaide: de cache was nieuw, het scherm oud, en
+   er was geen moment waarop je kon zeggen "er is een update". Nu blijft hij staan
+   tot de app erom vraagt (SKIP_WAITING), zodat er een eerlijke knop kan bestaan.
    ============================================================================ */
 
-const VERSION = 'stapper-v5';
+const VERSION = 'stapper-v6';
+/* Met de hand bijgehouden, want er is geen buildstap die dit kan stempelen. Bij
+ * het verhogen van VERSION ook deze regel aanpassen — het staat in de app. */
+const UITGEBRACHT = '27 juli 2026';
 
 /* Losse cache, gevuld door src/offline.js wanneer je een route offline meeneemt.
  * Apart gehouden zodat het opruimen van een appversie je gedownloade tegels niet
@@ -68,8 +76,25 @@ self.addEventListener('install', (event) => {
     await Promise.all([...SHELL, ...VENDOR].map(async (url) => {
       try { await cache.add(new Request(url, { cache: 'reload' })); } catch { /* laat maar */ }
     }));
-    self.skipWaiting();
+    // Bewust géén skipWaiting: zie de toelichting bovenaan. Wél als er nog geen
+    // controller is — dan is dit de eerste installatie en valt er niets te
+    // onderbreken.
+    if (!self.registration.active) self.skipWaiting();
   })());
+});
+
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+
+  // De app zegt: nu mag je. Daarna neemt clients.claim() de pagina over, vuurt
+  // `controllerchange` in de app, en herlaadt die zichzelf.
+  if (data.type === 'SKIP_WAITING') self.skipWaiting();
+
+  // Welke versie draait er? Antwoord over het meegestuurde kanaal, zodat de app
+  // niet hoeft te gokken op basis van de cachenamen.
+  if (data.type === 'VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ versie: VERSION, uitgebracht: UITGEBRACHT });
+  }
 });
 
 self.addEventListener('activate', (event) => {
