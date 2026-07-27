@@ -310,14 +310,27 @@ een paar procent minder bospad.
 De chips werden een wens in plaats van een voorwaarde. Zonder eisen zijn er geen
 verplichte punten meer, dus waar anker je dan op?
 
-**Punten op een ring werken niet.** Eerst geprobeerd: drie tot vijf verzonnen
-punten op een ring rond het start, die de router naar het naaste pad snapt. De
-afstand klopte prima (4,5 km op een doel van 4,5), maar **69 tot 89% dubbel
-gelopen** — ringpunten landen op dezelfde weg-uitlopers, dus de router pendelt er
-heen en weer naartoe. Meer ringpunten hielpen niet.
+Drie ankerbronnen gemeten, allemaal rond Twickel op dezelfde doelafstand:
 
-**De geoogste punten zónder soort-eis werken wel.** Die liggen per definitie aan
-het netwerk. Gemeten: 5,13 en 5,17 km op een doel van 4,5, en 11 tot 25% dubbel.
+| Ankers op | pad-aandeel | dubbel gelopen |
+|---|---|---|
+| POI's zonder soort-eis | 41% | 11–25% |
+| Verzonnen punten op een ring | 22–38% | 69–89% |
+| **Het padennetwerk** | **44–69%** | **6–37%** |
+
+**Punten op een ring werken niet.** De afstand klopte prima (4,5 km op een doel van
+4,5), maar 69 tot 89% dubbel gelopen: ringpunten landen op dezelfde weg-uitlopers,
+dus de router pendelt er heen en weer naartoe. Meer ringpunten hielpen niet.
+
+**POI-ankers werken half.** Ze liggen aan het netwerk, dus de vorm is redelijk,
+maar ze liggen bij een parkeerplaats of in een dorp — en daar moet de router via
+wegen naartoe.
+
+**Padankers werken.** Punten uit de `transportation`-laag met klasse `path` of
+`track`, fietspaden eruit gefilterd. Een handmatig gekozen set van vijf op 700 m
+gaf **69% pad en 6% dubbel** bij 5,97 km. Door de generator gekozen uit 90 echte
+padpunten: 44 tot 68% pad, 22 tot 37% dubbel, afstanden 6 tot 15% van het doel.
+
 Ringankers blijven alleen het vangnet voor als er helemaal niets te ankeren valt.
 
 ## Drie fouten onderweg

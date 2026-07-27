@@ -59,6 +59,16 @@ export async function generateRoutes({
     : CATEGORIES.filter((c) => c.from === 'tiles').map((c) => c.key);
   const pois = await harvester.collect({ lat, lon, radiusM: harvestR, keys: oogstKeys });
 
+  /* Zonder eisen ankeren we op het padennetwerk, niet op de POI's. Zie
+   * collectPathAnchors() voor de metingen: 69% pad en 6% dubbel gelopen, tegen
+   * 41% en 11–25% met POI-ankers. De POI's blijven wel nodig — om achteraf te
+   * vertellen waar de route langs komt. */
+  let padAnkers = [];
+  if (!chips.length && harvester.collectPathAnchors) {
+    onProgress('oogsten', 'paadjes in de buurt zoeken');
+    padAnkers = await harvester.collectPathAnchors({ lat, lon, radiusM: harvestR });
+  }
+
   let missing = [];
   if (supplement) {
     const extra = await supplement({ lat, lon, radiusM: harvestR, keys: chips });
@@ -89,8 +99,10 @@ export async function generateRoutes({
     const out = [];
     for (let i = 0; i < tries && out.length < count; i++) {
       onProgress('routeren', `rondje ${candidates.length + out.length + 1} van ${count}`);
+      // Zonder eisen kiezen we uit het padennetwerk; met eisen uit de POI's.
+      const pool = subset.length ? pois : (padAnkers.length ? padAnkers : pois);
       const cand = await buildCandidate({
-        start, targetM, wanted: subset, pois, shape,
+        start, targetM, wanted: subset, pois: pool, shape,
         offsetFraction: i / tries, usedByOthers, forceerRing, onProgress,
       });
       if (!cand) { attempts.push({ i, subset: subset.join('+'), reason: 'geen route' }); continue; }
@@ -228,7 +240,10 @@ async function buildCandidate({
   const outback = shape === 'outback';
   // Zonder eisen bepaalt de doelafstand het aantal hoekpunten, en dat staat vast
   // tijdens het itereren zodat de afstand kan convergeren.
-  const vrijeStops = clamp(Math.round(targetM / 1500), 3, 5);
+  // Padankers mogen er meer zijn dan POI-ankers: ze liggen dicht op elkaar langs
+  // het netwerk, dus meer hoekpunten maken de lus ronder zonder omwegen. Vijf op
+  // 4,5 km gaf gemeten 6% dubbel gelopen.
+  const vrijeStops = clamp(Math.round(targetM / 900), 4, 6);
   let extraStops = 0;
   let detour = DETOUR0;
   // Bij heen-en-terug is de enkele reis de helft, en liggen de punten op een lijn

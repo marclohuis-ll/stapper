@@ -120,8 +120,22 @@ een route voor morgen.
 ### Niets aanvinken mag ook
 
 De chips zijn een wens, geen voorwaarde. Vink je niets aan, dan zoekt de app het
-mooiste rondje vanaf je startpunt: hij ankert dan op de geoogste punten zónder
-soort-eis, en vertelt achteraf waar de route langs komt. Er staat *"niets, verras
+mooiste rondje vanaf je startpunt: hij ankert dan **op het padennetwerk zelf** —
+punten die al op een bospad of zandpad liggen — en vertelt achteraf waar de route
+langs komt.
+
+Dat ankerpunt is niet willekeurig gekozen. Gemeten rond Twickel, zelfde afstand:
+
+| Ankers op | pad-aandeel | dubbel gelopen |
+| --- | --- | --- |
+| POI's (speeltuin, café…) | 41% | 11–25% |
+| Verzonnen punten op een ring | 22–38% | 69–89% |
+| **Het padennetwerk** | **44–69%** | **6–37%** |
+
+Een punt dat al op een pad ligt hoeft de router niet via asfalt te bereiken, dus
+sluit de lus over paden. POI's liggen bij een parkeerplaats of in een dorp;
+ringpunten snappen naar de naaste weg-uitloper, waar de router heen en weer naartoe
+pendelt. Er staat *"niets, verras
 me"* naast de chips om ze in één tik te wissen.
 
 Lukt het mét eisen niet binnen je afstand, dan komt er als laatste ronde ook een
