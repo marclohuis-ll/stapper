@@ -12,7 +12,7 @@
    keer openen.
    ============================================================================ */
 
-const VERSION = 'stapper-v3';
+const VERSION = 'stapper-v4';
 
 /* Losse cache, gevuld door src/offline.js wanneer je een route offline meeneemt.
  * Apart gehouden zodat het opruimen van een appversie je gedownloade tegels niet
@@ -45,8 +45,13 @@ const SHELL = [
   'src/offline.js',
   'src/okapi.js',
   'src/geocode.js',
+  /* Alle iconen uit het manifest: de installatiedialoog en het beginscherm
+     moeten er ook bij kunnen als er geen bereik is. */
   'icons/icon-192.png',
   'icons/icon-512.png',
+  'icons/icon-192-maskable.png',
+  'icons/icon-512-maskable.png',
+  'icons/apple-touch-icon.png',
 ];
 
 /* Versievaste bibliotheken van de CDN: die veranderen niet, dus cache-first. */

@@ -508,3 +508,106 @@ waarom er een `≈` bij staat.
 Of het lekker aanvoelt. Of 250 ms stilstaan het juiste moment is om vast te
 snappen, of 22 px raakafstand op een echte duim klopt, en of de knoppen onderin
 niet in de weg zitten — dat vraagt een vinger op een telefoon.
+
+---
+
+# 10. Geocaches: wat er zonder sleutel al vast te stellen valt
+
+`node spike/okapi-probe.mjs` — 31 controles, geen consumer key nodig. De apiref van
+OKAPI is publiek, en daarmee is de helft van het werk te verifiëren die eerder blind
+geschreven was.
+
+## Wat er blind goed geraden was
+
+Alle veldnamen en het locatieformaat klopten al. Wat de apiref bevestigt:
+
+- `center` is `"lat|lon"` in hele graden met een punt
+- `status` mag `Available | Temporarily unavailable | Archived`
+- `limit` is 1..500 (wij vragen 20)
+- `search/nearest` geeft **alleen codes** terug: `{results: [...], more: bool}`
+- `caches/geocaches` geeft een dictionary **op cache-code**, dus `Object.values()`
+- `location` is óók `"lat|lon"`, dus omdraaien naar `[lon, lat]`
+- `min_auth_level` is 1: de sleutel als losse queryparameter volstaat, geen OAuth
+
+## En één ding dat makkelijk fout gaat
+
+`radius` is in **kilometers**, terwijl afstanden elders in OKAPI in meters staan.
+De apiref zegt het letterlijk: *"Unlike in most other places, this distance is given
+in kilometers instead of meters."* De code deelde al door 1000, maar dit is precies
+het soort ding dat je bij een refactor terugdraait omdat het inconsistent lijkt.
+
+## CORS en foutmeldingen
+
+`Access-Control-Allow-Origin: *`, dus dit kan gewoon uit de browser. En een foute
+sleutel geeft 400 met een bruikbare body:
+
+```json
+{"error":{"parameter":"consumer_key","whats_wrong_about_it":"Consumer does not exist.",…}}
+```
+
+Daarmee kan het verschil tussen *jouw sleutel is fout* en *er is geen netwerk*
+gemaakt worden, en dat verschil is het hele nut van de knop "Werkt de sleutel?".
+Zonder die knop faalt OKAPI stil — met opzet, want een route zonder caches is beter
+dan geen route — maar dan weet je ook nooit of het aan je sleutel ligt of aan een
+gebied zonder caches.
+
+## De naamsvermelding is een verplichting, en dus een XSS-vraag
+
+De Opencaching.NL Data License eist vermelding van auteur én Opencaching.NL. Omdat
+Stapper geen cachebeschrijvingen toont, moet dat via het aparte `attribution_note`.
+Dat veld is HTML met links, van een server die niet de onze is. Twee eisen die
+tegen elkaar in werken:
+
+- onbewerkt in de pagina zetten is een gat
+- de links weghalen mag niet — de voorwaarden verbieden het wijzigen of verbergen
+  van een vermelding
+
+Dus opnieuw opbouwen met een witte lijst: `a b i em strong br span`, en `href`
+alleen als het `http(s)` is. Gemeten met `<script>`, `<style>`, `<svg><script>`,
+`<img onerror>`, `onclick`, `javascript:` en `data:`-links: niets voert uit en de
+links blijven staan.
+
+Twee dingen die daarbij misgingen en het waard zijn om te onthouden:
+
+1. Onbekende elementen uitpakken en de tekst houden is goed voor `<div>`, maar bij
+   `<script>` betekent het dat de broncode als **zichtbare tekst** in de pagina
+   komt. Er is dus een tweede lijst nodig waarvan ook de inhoud verdwijnt.
+2. `tagName` is `'SCRIPT'` voor HTML-elementen maar `'script'` voor elementen
+   binnen `<svg>` of `<math>`. Een lijst in hoofdletters laat `<svg><script>`
+   ongemoeid passeren. Zonder `.toUpperCase()` lekte daar de scripttekst door.
+
+## Wat een echte sleutel nog moet uitwijzen
+
+Of een antwoord mét caches goed verwerkt wordt, en hoe `attribution_note` er in het
+echt uitziet — vorm, taal, en of er een link in zit die wij moeten laten staan.
+
+---
+
+# 11. Installeerbaar als PWA
+
+Manifest, iconen en service worker waren al goed, en de live site serveert ze met de
+juiste `Content-Type` (`application/manifest+json`, `image/png`). De app was dus
+altijd al installeerbaar. Wat ontbrak was dat ze het nergens **aanbood**: je moest
+het in het browsermenu vinden.
+
+Nagemeten in de browser (13 controles) met een nagemaakt `beforeinstallprompt`:
+de kaart verschijnt, `preventDefault()` houdt Chrome's eigen balkje tegen, `prompt()`
+wordt precies één keer geroepen, en de kaart verdwijnt daarna — want het event is
+eenmalig, geaccepteerd of niet.
+
+Drie dingen die je pas ziet als je het uitprobeert:
+
+- **`beforeinstallprompt` is eenmalig.** Na `prompt()` is het op. De regel bij de
+  instellingen valt daarom terug op "via het menu van je browser", en dat is geen
+  smoesje maar de waarheid.
+- **Chrome vuurt het niet altijd meteen.** Hij wil eerst wat gebruikersinteractie
+  zien. Een app die dan zegt "installeren kan niet" liegt, terwijl het via het menu
+  wél gaat. Vandaar dat er altijd een uitleg staat.
+- **`display-mode: standalone` is de enige betrouwbare "al geïnstalleerd"-test.**
+  `navigator.standalone` bestaat alleen op iOS.
+
+Verder: `id` is `"./"` en niet `/stapper/` — dat laatste hardcodeert het pad en is
+op localhost meteen fout. Relatief lost het op tegen de manifest-URL en klopt het
+op beide plekken. En de 192-maskable is erbij gekomen: Android kiest per
+beeldpuntdichtheid en schaalt 512 → 192 zichtbaar zachter dan een icoon dat op maat
+getekend is.
