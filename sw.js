@@ -12,7 +12,7 @@
    keer openen.
    ============================================================================ */
 
-const VERSION = 'stapper-v2';
+const VERSION = 'stapper-v3';
 
 /* Losse cache, gevuld door src/offline.js wanneer je een route offline meeneemt.
  * Apart gehouden zodat het opruimen van een appversie je gedownloade tegels niet
@@ -27,6 +27,8 @@ const SHELL = [
   'styles.css',
   'app.js',
   'manifest.webmanifest',
+  /* Alle modules, niet alleen die van het eerste scherm: stale-while-revalidate
+     vult de rest pas ná een online bezoek, en dan sta je al in het bos. */
   'src/geo.js',
   'src/pois.js',
   'src/router.js',
@@ -34,6 +36,15 @@ const SHELL = [
   'src/map-style.js',
   'src/mapview.js',
   'src/geolocate.js',
+  'src/edit.js',
+  'src/edit-map.js',
+  'src/tracking.js',
+  'src/compass.js',
+  'src/simulate.js',
+  'src/store.js',
+  'src/offline.js',
+  'src/okapi.js',
+  'src/geocode.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];

@@ -166,6 +166,20 @@ export function render({ route, position, progress = null, fit = true, padding =
 /** De kaartinstantie, voor controleren en debuggen. */
 export const instance = () => map;
 
+/* Tijdens het bewerken tekent edit-map.js zijn eigen lijn en knopen, want die
+ * moet per frame kunnen veranderen. Twee lagen over dezelfde geometrie zou een
+ * dubbele lijn geven, dus gaat deze even uit. */
+const ROUTE_LAGEN = ['route-shadow', 'route-line', 'route-poi', 'route-poi-label'];
+
+export function setRouteVisible(zichtbaar) {
+  if (!map) return;
+  for (const id of ROUTE_LAGEN) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', zichtbaar ? 'visible' : 'none');
+    }
+  }
+}
+
 export function centreOn(position, zoom = 16) {
   if (!map || !position) return;
   map.jumpTo({ center: [position.lon, position.lat], zoom });

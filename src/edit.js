@@ -16,12 +16,17 @@
    ============================================================================ */
 
 import { distM, overlapFraction } from './geo.js';
-import { routeLoop, RouteError } from './router.js';
+import { routeLoop, routeOutAndBack, RouteError } from './router.js';
 
 /* ── Model ──────────────────────────────────────────────────────────────── */
 
-/** Bouwt de bewerkbare lijst uit een gegenereerde route. */
+/** Bouwt de bewerkbare lijst uit een gegenereerde route. Is de route al eens
+ *  aangepast, dan staan de vormpunten erbij en nemen we die over — anders zou je
+ *  bij het opnieuw openen je eigen sleepwerk kwijt zijn. */
 export function waypointsFromRoute(route) {
+  if (Array.isArray(route.waypoints) && route.waypoints.length > 1) {
+    return route.waypoints.map((w) => ({ ...w }));
+  }
   const start = route.coords[0];
   return [
     { coord: start, kind: 'start' },
@@ -91,12 +96,16 @@ export const removeWaypoint = (waypoints, index) =>
  * Routeert de huidige waypoints en levert dezelfde meetwaarden die de generator
  * ook geeft, zodat de UI dezelfde getallen kan tonen.
  */
-export async function reroute(waypoints, { signal } = {}) {
+export async function reroute(waypoints, { shape = 'loop', signal } = {}) {
   if (waypoints.length < 2) throw new EditError('Te weinig punten om te routeren.');
+
+  // Een heen-en-terug blijft een heen-en-terug: die moet gespiegeld worden, want
+  // start → punten → start laten routeren maakt er stilletjes een rondje van.
+  const rijd = shape === 'outback' ? routeOutAndBack : routeLoop;
 
   let leg;
   try {
-    leg = await routeLoop(startOf(waypoints), viasOf(waypoints));
+    leg = await rijd(startOf(waypoints), viasOf(waypoints));
   } catch (e) {
     if (e instanceof RouteError) {
       throw new EditError('Hier kan geen pad langs. Sleep iets verder van het water of het spoor.');
@@ -115,18 +124,36 @@ export async function reroute(waypoints, { signal } = {}) {
   };
 }
 
+/* ── Elastiek ───────────────────────────────────────────────────────────── */
+
+/**
+ * Welk stuk van de lijn vervangt deze sleep? Twee gevallen, en het verschil is
+ * wezenlijk:
+ *
+ *   invoegen  — je pakt de lijn tussen twee punten. Dan vervang je precies dat
+ *               ene segment.
+ *   verplaatsen — je pakt een bestaand vormpunt. Dan vervang je het segment
+ *               ervóór *en* erna, anders blijft de helft achter op de oude plek.
+ */
+export function spanForInsert(coords, waypoints, insertIndex) {
+  const pos = waypointPositions(coords, waypoints);
+  return [pos[insertIndex - 1] ?? 0, pos[insertIndex] ?? coords.length - 1];
+}
+
+export function spanForMove(coords, waypoints, index) {
+  const pos = waypointPositions(coords, waypoints);
+  return [pos[index - 1] ?? 0, pos[index + 1] ?? coords.length - 1];
+}
+
 /**
  * Wat de elastiek laat zien tijdens het slepen: de bestaande lijn met het
- * gepakte segment vervangen door twee rechte stukken naar je vinger.
+ * gepakte stuk vervangen door twee rechte stukken naar je vinger.
  *
  * Rechte lijnen, geen router. Per frame een netwerkcall doen is niet te doen, en
  * een elastiek die achterloopt op je duim voelt gebroken. De echte route komt
  * zodra je even stilstaat of lost.
  */
-export function rubberBand(coords, waypoints, insertIndex, fingerCoord) {
-  const pos = waypointPositions(coords, waypoints);
-  const van = pos[insertIndex - 1] ?? 0;
-  const tot = pos[insertIndex] ?? coords.length - 1;
+export function rubberBand(coords, [van, tot], fingerCoord) {
   return [
     ...coords.slice(0, van + 1),
     fingerCoord,
@@ -154,23 +181,29 @@ export function rubberLength(band) {
  * `detour` komt uit de vorige echte routering, dus de schatting wordt beter naarmate
  * je sleept.
  *
- * Blijft een schatting. Gemeten over twaalf sleeprichtingen en -afstanden zit hij
- * er tussen −9% en +25% naast, en geen enkele opslagfactor doet het overal goed:
- * naar de ene kant staat een pad, naar de andere kant moet de router om. Daarom
- * hoort de UI dit als schatting te tonen (met een ≈) en pas te waarschuwen dat de
- * route te lang wordt als de échte routering binnen is. Een label dat een afstand
- * belooft die het niet kan waarmaken is erger dan een label dat "ongeveer" zegt.
+ * Blijft een schatting, en geen enkele opslagfactor doet het overal goed: naar de
+ * ene kant staat een pad, naar de andere kant moet de router om. Twee keer twaalf
+ * sleepbewegingen gemeten (zie spike/BEVINDINGEN.md, meting 9):
+ *
+ *   1,0   gemiddeld +1%,  van −16% tot +16%
+ *   1,1   gemiddeld +4%,  van  −5% tot +22%
+ *   1,2   gemiddeld +8%,  van  −2% tot +28%
+ *
+ * 1,1 dus. Niet omdat de spreiding het kleinst is — dat is 1,0 — maar omdat de
+ * fouten de goede kant op moeten vallen: te ruim schatten en 5,6 km lopen waar
+ * 5,9 km stond is een opluchting, te krap schatten en 6,4 km lopen met een kind
+ * van zes dat al klaar was, is het einde van de wandeling.
+ *
+ * Daarom ook: de UI toont dit met een ≈ en waarschuwt pas dat de route te lang
+ * wordt als de échte routering binnen is. Een label dat een afstand belooft die
+ * het niet kan waarmaken is erger dan een label dat "ongeveer" zegt.
  */
-const ESTIMATE_UPLIFT = 1.2;   // best gebalanceerd uit de meting
+const ESTIMATE_UPLIFT = 1.1;
 
-export function estimateLength(coords, waypoints, insertIndex, fingerCoord, {
+export function estimateLength(coords, [van, tot], fingerCoord, {
   baseDistanceM, detour = 1.45,
 }) {
   detour *= ESTIMATE_UPLIFT;
-  const pos = waypointPositions(coords, waypoints);
-  const van = pos[insertIndex - 1] ?? 0;
-  const tot = pos[insertIndex] ?? coords.length - 1;
-
   const vervangen = rubberLength(coords.slice(van, tot + 1));
   const nieuw = distM(coords[van], fingerCoord) + distM(fingerCoord, coords[tot]);
   return Math.max(0, baseDistanceM - vervangen + nieuw * detour);
@@ -200,6 +233,14 @@ export function createHistory(initial, limit = 20) {
     push(state) {
       stack.push(state);
       if (stack.length > limit + 1) stack.shift();
+      return state;
+    },
+    /* Eén sleep kan onderweg al een keer geroute hebben (je stond even stil) en
+     * daarna nóg een keer als je lost. Dat is voor jou één handeling, dus mag het
+     * ook maar één stap terug zijn. */
+    replace(state) {
+      if (stack.length > 1) stack[stack.length - 1] = state;
+      else stack.push(state);
       return state;
     },
     undo() {
