@@ -922,3 +922,39 @@ Dat laatste is niet overdreven: in een omgeving die 1 frame per seconde geeft, k
 `render()`, dus elke keer dat er iets veranderde — een pauzeknop, een melding — sprong
 je zoom en kanteling terug. Nu alleen bij het binnenkomen van een scherm. Dat was ook
 wat de kantelanimatie omgooide.
+
+---
+
+# 16. De tabbalk viel onder de rand
+
+De app was verticaal te scrollen, en dan schoof de tabbalk uit beeld.
+
+De oorzaak zat in twee hoogtes die niet dezelfde bedoelen:
+
+- `html, body { height: 100% }` rekent tegen de **grote** viewport — de hoogte alsof
+  de adresbalk weggeschoven is.
+- `.app { height: 100dvh }` is de **dynamische** viewport: wat er nú zichtbaar is.
+
+Met de adresbalk in beeld is het document dus precies de hoogte van die balk te lang.
+Het document krijgt een scrollbalk, en omdat `.app` `position: relative` was schoof het
+hele blok mee — inclusief de tabbalk, die absoluut onderaan de app hangt.
+
+Twee dingen aangepast, en ze doen elk iets anders:
+
+1. **`overflow: hidden` en `100dvh` op html en body.** Er valt nu niets te scrollen,
+   want het document is exact zo hoog als het venster. Dit is de eigenlijke oplossing.
+2. **`.app` van `relative` naar `fixed`.** Dat is het vangnet: kan het document ooit
+   tóch scrollen — een browser die zich niet aan `overflow: hidden` houdt, een
+   uitschuivend toetsenbord — dan hangt de app aan het venster en blijft de balk staan.
+
+`height: 100%` staat als terugval vóór `height: 100dvh`, voor browsers zonder `dvh`.
+
+Gevolg voor de brede weergave: de gecentreerde telefoonkolom werd met flexbox op de
+body gepositioneerd, en een `fixed` element trekt zich daar niets van aan. Die
+centrering staat nu op `.app` zelf (`left: 50%` plus `translate(-50%, -50%)`).
+
+Nagemeten op alle vier de tabs plus *instellen* en *welkom*: `scrollHeight` gelijk aan
+`clientHeight`, de onderkant van de balk exact op de vensterhoogte, en na
+`window.scrollTo(0, 800)` staat `scrollY` nog op 0 en is de balk niet verschoven.
+Scrollen bínnen de app werkt onveranderd — het profiel is 979 px hoog in een venster
+van 812 en scrollt netjes onder de balk door.

@@ -47,7 +47,18 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html, body { height: 100%; }
+/* Het document mag zelf niet scrollen. Zonder dit rekent `height: 100%` tegen de
+   grote viewport (met de adresbalk wéggeschoven) terwijl de app op `100dvh` staat —
+   de zichtbare hoogte. Met de adresbalk in beeld is het document dan precies de
+   hoogte van die balk te lang, en schuift het hele blok omhoog: de tabbalk verdwijnt
+   onder de rand. Scrollen doet alleen `.screen__body`, binnen de app.
+
+   `100%` staat er als terugval voor browsers zonder `dvh`. */
+html, body {
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
 
 body {
   margin: 0;
@@ -87,19 +98,29 @@ html, body { overscroll-behavior: none; }
 /* App shell ---------------------------------------------------------------- */
 /* Full-bleed on phones; a centred 412×892 column on wide screens, matching the
    viewport the design was drawn for. */
+/* `fixed` en niet `relative`: zo hangt de app aan het venster en niet aan het
+   document. Kan het document ooit tóch scrollen — een browser die zich niet aan
+   `overflow: hidden` houdt, of een uitschuivend toetsenbord — dan blijft de tabbalk
+   staan waar hij hoort in plaats van mee te schuiven. */
 .app {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 100%;
   max-width: 412px;
+  height: 100%;
   height: 100dvh;
-  margin: 0 auto;
   overflow: hidden;
   background: var(--bg);
 }
 
 @media (min-width: 720px) {
-  body { display: flex; align-items: center; justify-content: center; padding: 34px 0; }
+  /* De app hangt aan het venster, dus centreren gebeurt hier en niet met flexbox
+     op de body — die heeft er geen zeggenschap meer over. */
   .app {
+    top: 50%;
+    transform: translate(-50%, -50%);
     height: min(892px, calc(100dvh - 68px));
     border-radius: 34px;
     box-shadow: 0 30px 90px rgba(0,0,0,.55);

@@ -371,6 +371,19 @@ bewerken → onderweg → kindmodus. Dat zijn stappen in één handeling, met ee
 knop onderin en een terugknop bovenin — geen bestemmingen. De kindmodus mag de
 tabbalk trouwens ook niet hebben: die zit achter een code.
 
+### De tabbalk blijft staan
+
+De app hangt aan het venster (`position: fixed`, `100dvh`) en het document kan zelf
+niet scrollen. Zonder dat rekent `height: 100%` op html en body tegen de *grote*
+viewport — met de adresbalk weggeschoven — terwijl de app op `100dvh` staat, de
+zichtbare hoogte. Met de adresbalk in beeld is het document dan precies de hoogte van
+die balk te lang, en schuift het hele blok omhoog: de tabbalk verdwijnt onder de rand.
+
+Scrollen doet alleen `.screen__body`, binnen de app. `fixed` in plaats van `relative`
+is daarbij het vangnet: kan het document ooit tóch scrollen — een browser die zich niet
+aan `overflow: hidden` houdt, of een uitschuivend toetsenbord — dan blijft de balk staan
+waar hij hoort.
+
 ### Het paadje onderin
 
 De actieve tab is geen pil achter een icoon. Onderaan de balk loopt een gestippeld
