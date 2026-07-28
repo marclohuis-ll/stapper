@@ -202,6 +202,7 @@ En in de console van de app:
 | [src/map-style.js](src/map-style.js) | kaartstijl in het Boslamp-palet + oogst-stijl |
 | [src/mapview.js](src/mapview.js) | één MapLibre-instantie die tussen schermen verhuist |
 | [src/geolocate.js](src/geolocate.js) | positie, met duidelijke fout bij http |
+| [src/vloeiend.js](src/vloeiend.js) | tussen GPS-metingen tekenen, zodat bewegen vloeit |
 | [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel, hervatten |
 | [src/compass.js](src/compass.js) | kompas voor de kindmodus, gedempt over de eenheidscirkel |
 | [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
@@ -269,6 +270,42 @@ eenheidscirkel gemengd, want anders springt 350° → 10° door het zuiden heen.
 
 De keuze blijft bewaard: dit is een voorkeur, geen instelling die je per wandeling
 opnieuw wil kiezen.
+
+### Vloeiend bewegen, en een pijl in plaats van een stip
+
+Een GPS-fix komt ongeveer één keer per seconde. Zet je de kaart en de marker dán op de
+nieuwe plek, dan krijg je één sprong per seconde — en dat is wat hakkelig is: de
+beweging gebeurt in de wereld, niet in het scherm.
+
+[src/vloeiend.js](src/vloeiend.js) houdt daarom een *getoonde* positie bij die elk
+frame een stukje naar de laatste meting toe kruipt, en levert die 60 keer per seconde
+aan. Exponentieel gedempt en niet lineair geïnterpoleerd: lineair moet je vooraf weten
+wanneer de volgende meting komt, en onder een bladerdek valt er zomaar drie seconden
+niets binnen. Gemeten met `node spike/vloeiend-probe.mjs`:
+
+| | ongedempt | gedempt |
+| --- | --- | --- |
+| grootste stap in één frame | 1300 mm | **64 mm** |
+| frames die bewegen | 1 op 60 | **60 op 60** |
+| achterstand op de meting | 0 | 8 cm |
+
+Die 8 cm achterstand is de prijs, en die is een orde van grootte kleiner dan de
+GPS-onnauwkeurigheid zelf (10 tot 30 m onder bomen). Bij 30 fps legt hij per seconde
+exact dezelfde weg af als bij 60 — de tijd bepaalt de beweging, niet het aantal frames.
+
+Twee dingen die daarbij horen:
+
+- **De marker volgt de route, niet de ruis.** Loop je binnen 25 m van de lijn, dan
+  wordt de op de route geprojecteerde plek getekend in plaats van de ruwe meting.
+  Anders wiebelt de pijl om het pad heen terwijl je kaarsrecht loopt. Ben je écht van
+  de route af, dan is de ruwe meting het eerlijke antwoord — en dat zegt de kaart ook.
+- **De marker heeft zijn eigen bron.** Zat hij bij de route, dan zou elk frame een
+  lijn van honderden punten opnieuw geserialiseerd worden.
+
+En je bent nu een **pijl** die wijst waar je heen loopt, niet een stip. Hij staat op een
+donker schijfje, want lime op een lime routelijn verdwijnt. Weet de app de richting niet
+— je staat stil, of er is nog te weinig beweging gemeten — dan is het weer een ronde
+stip: een pijl die een richting verzint is erger dan geen pijl.
 
 ### Een herlaadactie kost je wandeling niet meer
 

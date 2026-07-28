@@ -842,3 +842,83 @@ om zich te heroriënteren. Duurder, maar alleen op het moment dat je verdwaald b
 sleep doet twee routeringen — één als je stilhoudt, één als je lost — en tussen die
 twee staat `bezig` even op false. De probe keek precies in dat gaatje en mat de helft
 van de handeling. Hij wacht nu tot het twee keer achter elkaar rustig is.
+
+---
+
+# 15. Hakkelig lopen, en een stip die niets zegt
+
+Twee klachten uit dezelfde wandeling, en ze horen bij elkaar.
+
+## Waarom het hakkelde
+
+Een GPS-fix komt ongeveer één keer per seconde. De app zette de kaart en de marker
+dán op de nieuwe plek. Gevolg: één sprong per seconde, en vijftig frames waarin niets
+gebeurt. De beweging zat in de wereld, niet in het scherm.
+
+Dat is niet op te lossen door sneller te meten — dat kan de satelliet niet — maar door
+*tussen* de metingen te tekenen. `src/vloeiend.js` houdt een getoonde positie bij die
+elk frame een stukje naar de laatste meting toe kruipt.
+
+**Exponentieel dempen, niet lineair interpoleren.** Lineair tussen twee fixes moet je
+vooraf weten wanneer de volgende komt, en dat weet je niet: onder een dicht bladerdek
+valt er zomaar drie seconden niets binnen. Exponentieel dempen heeft die aanname niet
+nodig, kan nooit voorbij het doel schieten, en vertraagt netjes als de metingen
+wegvallen in plaats van te bevriezen en dan te springen.
+
+Gemeten met `node spike/vloeiend-probe.mjs`, zes metingen op 1 Hz, getekend op 60 Hz:
+
+| | ongedempt | gedempt |
+| --- | --- | --- |
+| grootste stap in één frame | 1300 mm | **64 mm** |
+| frames die bewegen | 1 op 60 | **360 op 360** |
+| gemiddelde stap per frame | — | 21 mm |
+| achterstand op de meting | 0 | **8 cm** |
+
+Die 8 cm is de prijs, en die is een orde van grootte kleiner dan de GPS-
+onnauwkeurigheid zelf (10 tot 30 m onder bomen). Bij 30 fps legt hij per seconde exact
+dezelfde weg af als bij 60 — de tijd bepaalt de beweging, niet het aantal frames.
+
+## Drie dingen die erbij moesten
+
+- **Op de lijn tekenen in plaats van op de meting.** Binnen 25 m van de route wordt de
+  geprojecteerde plek getoond. Anders wiebelt de marker om het pad heen terwijl je
+  kaarsrecht loopt, en dat leest óók als hakkelen. Erbuiten is de ruwe meting het
+  eerlijke antwoord, en dat zegt de kaart al met "Je bent … m van de route".
+- **De marker in een eigen bron.** Zat hij bij de route, dan zou elk frame een lijn
+  van honderden punten opnieuw geserialiseerd worden.
+- **Per frame `jumpTo`, geen `easeTo`.** Het schuiven zit al in de gedempte positie.
+  Zou de kaart daar zélf ook nog over animeren, dan animeer je een animatie en loopt
+  het achter.
+
+## De pijl
+
+Een chevron van 30 px, op een canvas getekend en met `addImage` toegevoegd — geen
+bestand erbij dat mee moet in de offline-cache en kan 404'en. `icon-rotate` met
+`icon-rotation-alignment: map` en `icon-pitch-alignment: map`, zodat hij naar de plek
+in het landschap wijst en plat op de grond ligt als de kaart gekanteld staat.
+
+Twee dingen die pas bij het kijken bleken:
+
+- **Lime op lime verdwijnt.** De pijl staat pal op de 6,5 px lime routelijn. Met alleen
+  een donkere rand las hij als een vlekje. Er ligt nu een donker schijfje van 13 px
+  onder.
+- **Geen koers, geen pijl.** Sta je stil of is er te weinig beweging gemeten, dan is
+  het een ronde stip. Een pijl die een richting verzint is erger dan geen pijl. De
+  lagen kiezen op `['has', 'koers']`, en de sleutel wordt alleen gezet als hij er echt
+  is — `koers: null` zou de pijl laten verschijnen zonder richting.
+
+## Twee echte fouten die het meten blootlegde
+
+**Het detailscherm bleef gekanteld staan.** `setAanzicht` kantelde met een `easeTo`, en
+de `fitBounds` die er direct achteraan kwam kapte die animatie halverwege af. Daarna
+dacht de app dat hij plat stond terwijl de kaart op 58° hing — en omdat `setAanzicht`
+oversloeg als de opgeslagen stand al klopte, kwam hij daar nooit meer uit. Nu is de
+kaart de waarheid en niet de variabele: de stand wordt altijd toegepast, en de
+eindstand wordt na de animatie hard gezet — via `moveend`, en met een klok als vangnet.
+Dat laatste is niet overdreven: in een omgeving die 1 frame per seconde geeft, komt een
+`easeTo` van 480 ms nooit aan en blijft de camera halverwege hangen.
+
+**De camera werd bij elke hertekening opnieuw gezet.** `mountMap` liep bij elke
+`render()`, dus elke keer dat er iets veranderde — een pauzeknop, een melding — sprong
+je zoom en kanteling terug. Nu alleen bij het binnenkomen van een scherm. Dat was ook
+wat de kantelanimatie omgooide.

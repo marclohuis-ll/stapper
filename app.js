@@ -18,6 +18,7 @@ import { createTracker } from './src/tracking.js';
 import { startCompass, needleRotation, requestCompassPermission } from './src/compass.js';
 import { bearing, distM } from './src/geo.js';
 import { simulateWalk, simulationSetting } from './src/simulate.js';
+import { createVloeiend } from './src/vloeiend.js';
 import { parseGpx, overslagTekst, cachesInBuurt, GpxError } from './src/gpx.js';
 import { zoekPlaats } from './src/geocode.js';
 import * as store from './src/store.js';
@@ -193,6 +194,10 @@ const walk = {
   startedAt: null,
   bewaardOp: 0,
   klaarGemeld: false,
+
+  /* Tekent tussen de GPS-metingen door, zodat de stip loopt in plaats van springt.
+   * Zie src/vloeiend.js. */
+  vloeiend: null,
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
@@ -1604,6 +1609,7 @@ const tabs = document.getElementById('tabs');
 let lastScreen = null;
 let harvester = null;
 let editor = null;              // actief op het bewerkscherm, anders null
+let kaartWissel = false;        // is dit een schermwissel of alleen een hertekening?
 
 // De resultaatkaartjes tekenen de echte routegeometrie als SVG; via window zodat
 // de template-string erbij kan zonder de views tot modules te maken.
@@ -1679,6 +1685,11 @@ function render() {
   const newBody = app.querySelector('.screen__body');
   if (newBody && keepScroll) newBody.scrollTop = keepScroll;
 
+  /* Kwam je net op dit scherm, of is het alleen opnieuw getekend? Dat verschil
+   * bepaalt of de kaartstand opnieuw gezet mag worden. Bij elke hertekening de
+   * camera terugzetten gooit een lopende kantelanimatie om — en het zou ook je
+   * zoom weggooien elke keer dat er iets anders op het scherm verandert. */
+  kaartWissel = lastScreen !== state.screen;
   lastScreen = state.screen;
   paintTabs();
   focusCode();
@@ -1744,11 +1755,16 @@ async function mountMap() {
   const onderweg = state.screen === 'onderweg';
 
   // Het detailscherm is altijd plat: daar kijk je naar een route, niet vooruit.
-  mapview.setAanzicht(onderweg ? state.aanzicht : 'plat');
+  // Alleen bij binnenkomst: anders klapt elke hertekening je zoom en kanteling terug.
+  if (kaartWissel) mapview.setAanzicht(onderweg ? state.aanzicht : 'plat');
 
   mapview.render({
-    route, position: state.position, padding: 46, fit: !onderweg,
+    // Ook het passend maken alleen bij binnenkomst: had je op het detailscherm
+    // ingezoomd op een bruggetje, dan is het vervelend als dat wegspringt.
+    route, position: state.position, padding: 46, fit: !onderweg && kaartWissel,
     progress: onderweg && pr && route.distanceM ? pr.walkedM / route.distanceM : null,
+    // Meteen de pijl, niet eerst een frame een stip: je weet al welke kant je op liep.
+    koers: onderweg ? walk.koers : null,
   });
 
   if (!onderweg) return;
@@ -1787,11 +1803,18 @@ function volgWeer() {
 function wisselAanzicht() {
   state.aanzicht = state.aanzicht === 'schuin' ? 'plat' : 'schuin';
   store.setSetting('aanzicht', state.aanzicht).catch(() => {});
-  mapview.setAanzicht(state.aanzicht);
+
   // Volgen weer aan: je hebt net gezegd hóe je wil kijken, dus wil je ook zien waar
   // je bent. En in gekantelde stand is een kaart die niet meedraait onbruikbaar.
   walk.follow = true;
-  if (state.position) mapview.volg(state.position, walk.koers, { zacht: true });
+  // Eén animatie voor kanteling, draaiing, zoom én middelpunt. Twee animaties over
+  // dezelfde camera vechten, en dan haalt geen van beide zijn eindstand.
+  const stand = walk.vloeiend && walk.vloeiend.stand();
+  mapview.setAanzicht(state.aanzicht, {
+    zacht: true,
+    position: stand || state.position,
+    koers: walk.koers,
+  });
   render();
 }
 
@@ -1832,11 +1855,29 @@ function hervatVolgen() {
   const route = currentRoute();
   if (!route) return;
 
+  startVloeiend();
+
   const onMove = (p) => {
     volgKoers(p);
     volgSpoor(p);
     state.position = p;
     walk.progress = walk.tracker.update(p);
+
+    /* De stip en de kaart krijgen niet deze meting maar een doel om naartoe te
+     * kruipen. Eén sprong per seconde is wat "hakkelig" is; het tekenen gebeurt
+     * daarom 60 keer per seconde in startVloeiend().
+     *
+     * En niet de ruwe meting maar de op de route geprojecteerde plek, zolang je
+     * binnen GPS-ruis van de lijn loopt — anders wiebelt de stip om het pad heen
+     * terwijl je kaarsrecht loopt. Ben je écht van de route af, dan is de ruwe
+     * meting het eerlijke antwoord en zegt de kaart dat ook. */
+    const pr = walk.progress;
+    const opDeLijn = pr.offRouteM <= OP_DE_LIJN_M && pr.snapped;
+    walk.vloeiend.push({
+      lon: opDeLijn ? pr.snapped[0] : p.lon,
+      lat: opDeLijn ? pr.snapped[1] : p.lat,
+      koers: walk.koers,
+    });
 
     // Rondje rond: één keer hertekenen, zodat de kaart de knop naar de terugblik
     // krijgt in plaats van de pauzeknop. Daarna weer alleen ter plekke bijwerken.
@@ -1874,14 +1915,35 @@ function stopWalk({ vastleggen = true } = {}) {
   if (walk.stopWatch) walk.stopWatch();
   if (walk.stopCompass) walk.stopCompass();
   if (walk.stopKaartKijk) walk.stopKaartKijk();
+  if (walk.vloeiend) walk.vloeiend.stop();
   clearTimeout(walk.nudgeTimer);
   Object.assign(walk, {
     tracker: null, progress: null, heading: null, sticker: null,
     nudge: '', override: false, stopWatch: null, stopCompass: null,
     stopKaartKijk: null, koers: null, vorigePunt: null, trail: [],
-    startedAt: null, bewaardOp: 0, klaarGemeld: false,
+    startedAt: null, bewaardOp: 0, klaarGemeld: false, vloeiend: null,
   });
   return vast;
+}
+
+/* Tot hoe ver van de route de stip op de lijn getekend mag worden. Ruim binnen wat
+ * GPS onder een bladerdek doet (10–30 m), dus dit verbergt ruis en geen omweg. */
+const OP_DE_LIJN_M = 25;
+
+/**
+ * Het tekenen tussen de metingen door.
+ *
+ * Alles wat 60 keer per seconde gebeurt staat hier, en dat is bewust weinig: één punt
+ * naar de kaart en de camera meeschuiven. De route, de balk en de teksten veranderen
+ * maar één keer per meting en horen dus in paintWalk().
+ */
+function startVloeiend() {
+  if (walk.vloeiend) walk.vloeiend.stop();
+  walk.vloeiend = createVloeiend(({ lon, lat, koers }) => {
+    if (state.screen !== 'onderweg' && state.screen !== 'kind') return;
+    mapview.paintMij({ lon, lat }, koers);
+    if (walk.follow) mapview.volg({ lon, lat }, koers);
+  });
 }
 
 /* ── Waar je heen loopt, en waar je geweest bent ────────────────────────────── */
@@ -1974,11 +2036,10 @@ function paintWalk() {
     const icon = app.querySelector('[data-next-ico] .ms');
     if (icon && pr.next) icon.textContent = pr.next.icon;
 
-    mapview.render({
-      route: r, position: state.position, fit: false,
-      progress: r.distanceM ? pr.walkedM / r.distanceM : 0,
-    });
-    if (walk.follow) mapview.volg(state.position, walk.koers);
+    /* Alleen het verloop op de lijn; de lijn zelf en de punten staan er al. Hier de
+     * hele route opnieuw wegschrijven zou honderden coördinaten per meting kosten,
+     * en de stip en de camera worden al 60 keer per seconde bijgewerkt. */
+    mapview.setProgress(r.distanceM ? pr.walkedM / r.distanceM : 0);
   }
 
   if (state.screen === 'kind') {
@@ -2142,7 +2203,10 @@ function togglePauze() {
   if (state.pauze) {
     if (walk.stopWatch) walk.stopWatch();
     if (walk.stopCompass) walk.stopCompass();
-    walk.stopWatch = walk.stopCompass = null;
+    // Ook het tekenen tussen de metingen stoppen: zonder nieuwe metingen kruipt de
+    // stip nergens meer naartoe, en dan is een lopende animatielus alleen accu.
+    if (walk.vloeiend) walk.vloeiend.stop();
+    walk.stopWatch = walk.stopCompass = walk.vloeiend = null;
   } else if (walk.tracker) {
     hervatVolgen();
   }

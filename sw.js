@@ -17,7 +17,7 @@
    tot de app erom vraagt (SKIP_WAITING), zodat er een eerlijke knop kan bestaan.
    ============================================================================ */
 
-const VERSION = 'stapper-v8';
+const VERSION = 'stapper-v9';
 /* Met de hand bijgehouden, want er is geen buildstap die dit kan stempelen. Bij
  * het verhogen van VERSION ook deze regel aanpassen — het staat in de app. */
 const UITGEBRACHT = '27 juli 2026';
@@ -49,6 +49,7 @@ const SHELL = [
   'src/tracking.js',
   'src/compass.js',
   'src/simulate.js',
+  'src/vloeiend.js',
   'src/store.js',
   'src/offline.js',
   'src/gpx.js',

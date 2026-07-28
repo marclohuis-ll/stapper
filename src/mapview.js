@@ -11,6 +11,8 @@
 import { darkStyle, MAP_COLOURS } from './map-style.js';
 
 const SRC = 'stapper-route';
+const MIJ = 'stapper-mij';
+const PIJL = 'mij-pijl-icoon';
 
 let map = null;
 let host = null;
@@ -62,7 +64,8 @@ function ensure(maplibregl) {
     });
     map.addLayer({
       id: 'route-poi', type: 'circle', source: SRC,
-      filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'kind'], 'me']],
+      // Alleen nog de punten onderweg: de eigen positie zit in een eigen bron.
+      filter: ['==', ['geometry-type'], 'Point'],
       paint: {
         'circle-radius': 7, 'circle-color': '#0C1A17',
         'circle-stroke-color': '#C9F26E', 'circle-stroke-width': 3,
@@ -70,7 +73,7 @@ function ensure(maplibregl) {
     });
     map.addLayer({
       id: 'route-poi-label', type: 'symbol', source: SRC,
-      filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'kind'], 'me']],
+      filter: ['==', ['geometry-type'], 'Point'],
       layout: {
         'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'],
         'text-size': 11.5, 'text-offset': [0, 1.5], 'text-anchor': 'top',
@@ -78,17 +81,51 @@ function ensure(maplibregl) {
       },
       paint: { 'text-color': '#EAF3EA', 'text-halo-color': '#0A1512', 'text-halo-width': 2 },
     });
+    /* Waar jij bent staat in een éigen bron. Dat is geen ordening maar snelheid:
+     * de stip wordt 60 keer per seconde bijgewerkt (zie src/vloeiend.js), en zat
+     * hij in dezelfde bron als de route, dan zou elke frame een lijn van
+     * honderden punten opnieuw geserialiseerd worden. */
+    map.addSource(MIJ, { type: 'geojson', data: empty() });
+
     map.addLayer({
-      id: 'me-halo', type: 'circle', source: SRC,
-      filter: ['==', ['get', 'kind'], 'me'],
-      paint: { 'circle-radius': 16, 'circle-color': '#C9F26E', 'circle-opacity': .18 },
+      id: 'mij-halo', type: 'circle', source: MIJ,
+      paint: { 'circle-radius': 19, 'circle-color': '#C9F26E', 'circle-opacity': .15 },
     });
+    /* Een donker schijfje onder de pijl. Nodig omdat de pijl lime is en pal op de
+     * lime routelijn staat: zonder deze ondergrond smelt hij samen met de lijn
+     * waarop hij loopt, en dan zie je een vlekje in plaats van een richting. */
     map.addLayer({
-      id: 'me', type: 'circle', source: SRC,
-      filter: ['==', ['get', 'kind'], 'me'],
+      id: 'mij-schijf', type: 'circle', source: MIJ,
+      paint: {
+        'circle-radius': 13, 'circle-color': '#0A1512', 'circle-opacity': .92,
+        'circle-stroke-color': 'rgba(201,242,110,.35)', 'circle-stroke-width': 1,
+      },
+    });
+    /* Twee weergaven, en het verschil is inhoudelijk: een pijl beweert dat hij weet
+     * welke kant je op loopt. Weten we dat niet — je staat stil, of er is nog niet
+     * genoeg beweging gemeten — dan is een ronde stip het eerlijke antwoord. */
+    map.addLayer({
+      id: 'mij-stip', type: 'circle', source: MIJ,
+      filter: ['!', ['has', 'koers']],
       paint: {
         'circle-radius': 7, 'circle-color': '#C9F26E',
-        'circle-stroke-color': '#0C1A17', 'circle-stroke-width': 3,
+        'circle-stroke-color': '#0A1512', 'circle-stroke-width': 3,
+      },
+    });
+    if (!map.hasImage(PIJL)) map.addImage(PIJL, pijlAfbeelding(), { pixelRatio: 2 });
+    map.addLayer({
+      id: 'mij-pijl', type: 'symbol', source: MIJ,
+      filter: ['has', 'koers'],
+      layout: {
+        'icon-image': PIJL,
+        'icon-rotate': ['get', 'koers'],
+        // In kaartruimte draaien én kantelen: dan wijst de pijl naar de plek in het
+        // landschap waar je heen loopt, en ligt hij plat op de grond als de kaart
+        // gekanteld staat in plaats van als een bordje overeind.
+        'icon-rotation-alignment': 'map',
+        'icon-pitch-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
       },
     });
     res();
@@ -98,6 +135,68 @@ function ensure(maplibregl) {
 }
 
 const empty = () => ({ type: 'FeatureCollection', features: [] });
+
+/**
+ * De pijl die jou voorstelt, getekend op een canvas.
+ *
+ * Geen bestand erbij: dan moet het mee in de offline-cache, kan het 404'en, en is de
+ * kleur op twee plekken vastgelegd. Zeventien regels canvas is hier goedkoper dan een
+ * afhankelijkheid.
+ *
+ * Hij wijst naar boven (0° = noord), want `icon-rotate` draait met de klok mee vanaf
+ * boven — precies zoals een peiling loopt.
+ */
+function pijlAfbeelding(ratio = 2) {
+  const s = 30 * ratio;                 // 30 px is groot genoeg om richting te zíen
+  const k = ratio;
+  const c = document.createElement('canvas');
+  c.width = s;
+  c.height = s;
+  const g = c.getContext('2d');
+  g.translate(s / 2, s / 2);
+
+  // Een chevron met een inkeping onderin: die leest als richting, waar een
+  // gelijkbenige driehoek er op een kleine maat uitziet als een vlekje.
+  g.beginPath();
+  g.moveTo(0, -11 * k);
+  g.lineTo(8 * k, 9 * k);
+  g.lineTo(0, 4.5 * k);
+  g.lineTo(-8 * k, 9 * k);
+  g.closePath();
+
+  // Eerst de donkere rand eronder, dan de vulling erover: zo blijft de pijl leesbaar
+  // boven een lime paadje én boven donker bos.
+  g.strokeStyle = '#0A1512';
+  g.lineWidth = 3 * k;
+  g.lineJoin = 'round';
+  g.stroke();
+  g.fillStyle = '#C9F26E';
+  g.fill();
+
+  return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+}
+
+/**
+ * Waar jij bent, en welke kant je op loopt.
+ *
+ * Dit is het enige dat per frame verandert, dus het staat apart van render(): één
+ * punt wegschrijven in plaats van de route erbij.
+ */
+export function paintMij(position, koers = null) {
+  if (!map || !map.getSource(MIJ)) return;
+  if (!position) { map.getSource(MIJ).setData(empty()); return; }
+
+  // De sleutel alleen zetten als we hem écht hebben: de lagen kiezen op `has`, en
+  // een `koers: null` zou de pijl laten verschijnen zonder richting.
+  const props = Number.isFinite(koers) ? { koers } : {};
+  map.getSource(MIJ).setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature', properties: props,
+      geometry: { type: 'Point', coordinates: [position.lon, position.lat] },
+    }],
+  });
+}
 
 const WALKED = '#C9F26E';                    // achter je: helder
 const AHEAD = 'rgba(234,243,234,.38)';       // voor je: gedempt
@@ -136,7 +235,7 @@ export function detach() {
 
 /** Zet route en eigen positie op de kaart. Beide mogen ontbreken. */
 export function render({
-  route, position, progress = null, fit = true, padding = 40, trail = null,
+  route, position, progress = null, fit = true, padding = 40, trail = null, koers = null,
 }) {
   if (!map || !map.getSource(SRC)) return;
 
@@ -164,13 +263,11 @@ export function render({
       geometry: { type: 'Point', coordinates: p.coord },
     }));
   }
-  if (position) {
-    features.push({
-      type: 'Feature', properties: { kind: 'me' },
-      geometry: { type: 'Point', coordinates: [position.lon, position.lat] },
-    });
-  }
   map.getSource(SRC).setData({ type: 'FeatureCollection', features });
+
+  // De eigen positie zit in zijn eigen bron; hier alleen doorgeven zodat schermen
+  // die render() aanroepen niet ook nog paintMij hoeven te kennen.
+  paintMij(position, koers);
 
   if (fit && ((route && route.coords.length) || (trail && trail.length))) {
     // Bedoelde route én gelopen spoor samen in beeld: op de terugblik is een
@@ -182,6 +279,13 @@ export function render({
       [Infinity, Infinity, -Infinity, -Infinity]);
     map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding, duration: 0 });
   }
+}
+
+/** Alleen het verloop bijwerken: gelopen deel helder, de rest gedempt.
+ *  Apart van render(), zodat de route zelf niet elke meting opnieuw de lijn in hoeft. */
+export function setProgress(fraction) {
+  if (!map || !map.getLayer('route-line')) return;
+  map.setPaintProperty('route-line', 'line-gradient', gradientFor(fraction));
 }
 
 /** De kaartinstantie, voor controleren en debuggen. */
@@ -224,17 +328,59 @@ const AANZICHT = {
 };
 
 let aanzicht = 'plat';
+let kantelt = false;        // er loopt een kantelanimatie; volg() blijft dan af
 
-export function setAanzicht(soort) {
+/**
+ * De kaart in een stand zetten.
+ *
+ * Dit is de énige plek die kanteling, draaiing en zoom bepaalt — anders vechten twee
+ * animaties om dezelfde camera. Dat gebeurde: het kantelen liep als easeTo, en de
+ * fitBounds die er direct achteraan kwam kapte die animatie halverwege af. Daarna
+ * dacht de app dat hij plat stond terwijl de kaart op 58° bleef hangen.
+ *
+ * Vandaar ook: nooit overslaan omdat de opgeslagen stand al klopt. De kaart is de
+ * waarheid, niet onze variabele.
+ *
+ * `zacht` is voor als jíj op de knop tikt; bij een schermwissel moet het meteen goed
+ * staan, want daar komt een fitBounds achteraan.
+ */
+export function setAanzicht(soort, { zacht = false, position = null, koers = null } = {}) {
   aanzicht = AANZICHT[soort] ? soort : 'plat';
   if (!map) return;
+
   if (map.getLayer('building-3d')) {
     map.setLayoutProperty('building-3d', 'visibility', aanzicht === 'schuin' ? 'visible' : 'none');
   }
-  // Terug naar plat betekent ook: noord weer boven. Anders blijf je met een
-  // scheve kaart zitten en is "plat" maar half waar.
-  if (aanzicht === 'plat') map.easeTo({ pitch: 0, bearing: 0, duration: 420 });
-  else map.easeTo({ pitch: AANZICHT.schuin.pitch, duration: 420 });
+
+  const a = AANZICHT[aanzicht];
+  const doel = { pitch: a.pitch, zoom: a.zoom };
+  // Terug naar plat betekent ook: noord weer boven. Anders blijf je met een scheve
+  // kaart zitten en is "plat" maar half waar.
+  if (!a.koersVolgen) doel.bearing = 0;
+  else if (Number.isFinite(koers)) doel.bearing = koers;
+  if (position) doel.center = [position.lon, position.lat];
+
+  if (!zacht) { map.jumpTo(doel); return; }
+
+  /* Animeren én de eindstand afdwingen.
+   *
+   * Een easeTo hangt aan frames, en een animatie die geen frames krijgt blijft
+   * halverwege staan: gemeten in een omgeving op 1 fps bleef de kaart op pitch 58
+   * hangen terwijl de app dacht dat hij plat was. De stand van de kaart mag niet
+   * afhangen van hoe vlot het toestel tekent, dus wordt hij aan het eind hard gezet
+   * — via moveend als de animatie wél loopt, en anders via de klok.
+   */
+  kantelt = true;
+  let gedaan = false;
+  const afronden = () => {
+    if (gedaan) return;
+    gedaan = true;
+    kantelt = false;
+    map.jumpTo(doel);
+  };
+  map.once('moveend', afronden);
+  setTimeout(afronden, 700);
+  map.easeTo({ ...doel, duration: 480 });
 }
 
 export const huidigAanzicht = () => aanzicht;
@@ -248,15 +394,25 @@ export const huidigAanzicht = () => aanzicht;
  */
 export function volg(position, course = null, { zacht = false } = {}) {
   if (!map || !position) return;
-  const a = AANZICHT[aanzicht];
+  // Tijdens het kantelen niets doen: een jumpTo per frame zou die animatie
+  // onmiddellijk doodslaan en dan klapt de kaart om in plaats van te kantelen.
+  if (kantelt && !zacht) return;
 
-  const doel = { center: [position.lon, position.lat], zoom: a.zoom, pitch: a.pitch };
+  const a = AANZICHT[aanzicht];
+  const doel = { center: [position.lon, position.lat] };
   // Alleen draaien als we een koers hebben. Zonder koers de kaart op 0 zetten zou
   // hem bij elke tik terugklappen naar noord, en dat is erger dan niet draaien.
   if (a.koersVolgen && Number.isFinite(course)) doel.bearing = course;
 
-  if (zacht) map.easeTo({ ...doel, duration: 520 });
-  else map.jumpTo(doel);
+  if (zacht) {
+    map.easeTo({ ...doel, zoom: a.zoom, pitch: a.pitch, duration: 520 });
+    return;
+  }
+  /* Elk frame een jumpTo, en dat is precies goed: het schuiven zit al in de
+   * gedempte positie die src/vloeiend.js aanlevert. Zou de kaart hier zélf ook nog
+   * animeren, dan animeer je een animatie en loopt het achter. Zoom en kanteling
+   * blijven met opzet ongemoeid — die veranderen alleen als jij ze verandert. */
+  map.jumpTo(doel);
 }
 
 /**
