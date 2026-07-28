@@ -18,6 +18,7 @@ const WINDOW_M = 300;        // hoe ver vooruit en achteruit we zoeken
 const ARRIVE_BASE = 40;      // basisdrempel voor "je bent er" (meter)
 const ARRIVE_MAX = 90;
 const PASSED_OFFLINE_M = 60; // tot hoe ver van de lijn "erlangs gelopen" nog geldt
+const REACQUIRE_M = 150;     // hierboven zoeken we de hele lijn opnieuw af
 
 /** Cumulatieve afstand per punt van de lijn. */
 function cumulative(coords) {
@@ -42,9 +43,13 @@ function projectOnSegment(p, a, b) {
 
 /**
  * Houdt de voortgang over één route bij.
+ *
  * @param {{coords:Array, pois:Array, distanceM:number, kidTimeS:number}} route
+ * @param {{walkedM:number, reached:number[]}} [hervat] eerder bewaarde voortgang.
+ *   Bestaat omdat een per ongeluk herladen pagina anders je hele wandeling wist —
+ *   en je staat op dat moment in het bos, niet achter een bureau.
  */
-export function createTracker(route) {
+export function createTracker(route, hervat = null) {
   const coords = route.coords;
   const cum = cumulative(coords);
   const total = cum[cum.length - 1] || route.distanceM || 0;
@@ -66,9 +71,27 @@ export function createTracker(route) {
   let walked = 0;             // meters langs de lijn, loopt nooit terug
   let offRoute = 0;
 
+  if (hervat) {
+    walked = Math.max(0, Math.min(total, Number(hervat.walkedM) || 0));
+    // Het zoekvenster moet ook mee terug: begint dat op 0 terwijl je halverwege
+    // bent, dan projecteert de eerste meting je op het begin van de route en denkt
+    // de app dat je opnieuw begint.
+    while (lastIndex < cum.length - 2 && cum[lastIndex + 1] < walked) lastIndex++;
+    const gedaan = new Set(hervat.reached || []);
+    for (const p of pois) if (gedaan.has(p.index)) p.reached = true;
+  }
+
   return {
     total,
     pois,
+
+    /** Genoeg om deze wandeling later precies zo terug te zetten. */
+    snapshot() {
+      return {
+        walkedM: walked,
+        reached: pois.filter((p) => p.reached).map((p) => p.index),
+      };
+    },
 
     /** @param {{lat:number, lon:number, accuracy:number}} position */
     update(position) {
@@ -87,6 +110,24 @@ export function createTracker(route) {
             dist: pr.dist, index: s, snapped: pr.snapped,
             along: cum[s] + (cum[s + 1] - cum[s]) * pr.t,
           };
+        }
+      }
+
+      /* Ver buiten het venster: dan is de vorige plek geen goede aanname meer.
+       * Dat gebeurt als je een paar minuten geen fix had — onder een dicht
+       * bladerdek is dat gewoon zo — en dan projecteert een vensterzoektocht je op
+       * de rand van het venster in plaats van waar je bent. Eén keer de hele lijn
+       * langs is dan het antwoord; dat is duurder, maar alleen als je verdwaald bent.
+       * De voortgang loopt daarna nog steeds nooit terug. */
+      if (best.dist > REACQUIRE_M) {
+        for (let s = 0; s < coords.length - 1; s++) {
+          const pr = projectOnSegment(p, coords[s], coords[s + 1]);
+          if (pr.dist < best.dist) {
+            best = {
+              dist: pr.dist, index: s, snapped: pr.snapped,
+              along: cum[s] + (cum[s + 1] - cum[s]) * pr.t,
+            };
+          }
         }
       }
 

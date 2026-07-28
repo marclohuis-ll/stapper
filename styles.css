@@ -63,6 +63,11 @@ body {
 
 button { font-family: inherit; color: inherit; }
 
+/* Geen pull-to-refresh. Eén keer per ongeluk naar beneden trekken tijdens een
+   wandeling herlaadde de app, en dat kostte de hele voortgang. De wandeling wordt
+   nu ook bewaard (zie bewaarLopend), maar het beste is dat het niet gebeurt. */
+html, body { overscroll-behavior: none; }
+
 /* Material Symbols Rounded ------------------------------------------------- */
 .ms {
   font-family: 'Material Symbols Rounded';
@@ -197,7 +202,9 @@ button { font-family: inherit; color: inherit; }
 .rcard__map, .rcard__body, .rcard__name, .rcard__desc,
 .pair__text, .pair__k, .pair__v,
 .poi__name, .poi__meta,
-.doorlink__text, .doorlink__title, .doorlink__sub { display: block; }
+.doorlink__text, .doorlink__title, .doorlink__sub,
+.wandeling__text, .wandeling__naam, .wandeling__meta,
+.hervat__text, .hervat__title, .hervat__sub { display: block; }
 
 /* Shared bits -------------------------------------------------------------- */
 .section-head {
@@ -1202,7 +1209,11 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 }
 
 /* Een gelopen wandeling in het boek. Geen knop: er valt niets te openen. */
-.wandeling { display: flex; gap: 14px; align-items: center; padding: 10px 0; }
+.wandeling {
+  width: 100%; display: flex; gap: 14px; align-items: center; padding: 10px 0;
+  border: 0; background: transparent; color: inherit; text-align: left;
+  font: inherit; cursor: pointer;
+}
 .wandeling__ico {
   width: 34px; height: 34px; border-radius: 12px; flex: none;
   background: var(--bg-poi); border: 1px solid rgba(201,242,110,.22);
@@ -1214,6 +1225,95 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
   display: block; font-family: var(--f-display); font-weight: 700; font-size: 15px;
 }
 .wandeling__meta { display: block; font-size: 12px; color: var(--text-66); margin-top: 2px; }
+
+/* ── ONDERWEG: DE KAART BEDIENEN ────────────────────────────────────────────
+   Rechtsboven, buiten de duimzone van de kaartbediening zelf. Klein en donker: de
+   kaart is de hoofdrol, dit zijn schakelaars.
+   ───────────────────────────────────────────────────────────────────────────── */
+.kaartknoppen {
+  position: absolute; z-index: 4; right: 14px;
+  top: calc(74px + env(safe-area-inset-top));
+  display: flex; flex-direction: column; gap: 9px;
+}
+.kaartknop {
+  width: 46px; height: 46px; border-radius: 16px; border: 1px solid var(--line-soft);
+  background: rgba(10,21,18,.82); backdrop-filter: blur(8px);
+  cursor: pointer; display: grid; place-items: center; gap: 0;
+  color: var(--text);
+}
+.kaartknop[hidden] { display: none; }
+.kaartknop .ms { font-size: 21px; }
+.kaartknop__label {
+  font-family: var(--f-display); font-size: 9.5px; font-weight: 800;
+  letter-spacing: .04em; line-height: 1; margin-top: -2px;
+}
+.kaartknop--aan {
+  border-color: rgba(201,242,110,.38); background: rgba(201,242,110,.14); color: var(--lime);
+}
+/* De volgknop is er alleen als de kaart je níet meer volgt, en is dan het antwoord
+   op "waar was ik?" — dus lime, niet grijs. */
+.kaartknop--volg { border-color: rgba(201,242,110,.34); color: var(--lime); }
+
+/* ── EEN ONDERBROKEN WANDELING ──────────────────────────────────────────────── */
+.hervat {
+  position: relative; margin-top: 16px; padding: 14px 15px;
+  display: flex; gap: 13px; align-items: center;
+  border-radius: 24px; border: 1px solid rgba(201,242,110,.32);
+  background: rgba(201,242,110,.09);
+}
+.hervat__ico {
+  width: 42px; height: 42px; border-radius: 14px; flex: none;
+  background: rgba(201,242,110,.16); display: grid; place-items: center;
+}
+.hervat__ico .ms { font-size: 22px; color: var(--lime); }
+.hervat__text { flex: 1; min-width: 0; }
+.hervat__title {
+  display: block; font-family: var(--f-display); font-weight: 700; font-size: 15px;
+  color: var(--text-bright);
+}
+/* Mag over twee regels: hier staat wélk rondje en hoe ver je was, en dat is precies
+   waarop je besluit of je verder wil. Afkappen haalt de helft daarvan weg. */
+.hervat__sub {
+  display: block; font-size: 12px; line-height: 1.4; color: var(--text-72); margin-top: 3px;
+}
+.hervat__doe {
+  flex: none; height: 38px; padding: 0 16px; border-radius: 999px; border: 0;
+  background: var(--lime); color: var(--ink);
+  font-family: var(--f-display); font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.hervat__weg {
+  position: absolute; top: 5px; right: 5px; width: 26px; height: 26px;
+  border: 0; border-radius: 999px; background: transparent; cursor: pointer;
+  display: grid; place-items: center;
+}
+.hervat__weg .ms { font-size: 15px; color: var(--text-40); }
+
+/* ── DE TERUGBLIK ───────────────────────────────────────────────────────────
+   Dezelfde opbouw als het routedetail — kaart met een blad eroverheen — want het is
+   dezelfde soort bladzijde: één route om naar te kijken. Het verschil zit in de
+   twee lijnen erop, en die hebben dus een legenda nodig.
+   ───────────────────────────────────────────────────────────────────────────── */
+.recap__hero {
+  height: 320px; position: relative; overflow: hidden; z-index: 0;
+  background: var(--bg-map);
+}
+.recap__legenda {
+  position: absolute; z-index: 2; left: 18px; bottom: 46px;
+  display: flex; gap: 14px; padding: 7px 12px; border-radius: 999px;
+  background: rgba(10,21,18,.8); backdrop-filter: blur(8px);
+  font-size: 11px; color: var(--text-72);
+}
+.recap__leg { display: inline-flex; align-items: center; gap: 6px; }
+.recap__streep { width: 16px; height: 3px; border-radius: 2px; flex: none; }
+.recap__streep--route { background: var(--lime); }
+.recap__streep--trail { background: var(--mint); }
+.recap__kicker {
+  font-family: var(--f-display); font-weight: 700; font-size: 13px;
+  color: var(--lime); margin-bottom: 6px;
+}
+.cijfers--recap { margin-top: 18px; }
+
+.wandeling__chev { font-size: 20px !important; color: var(--text-40); }
 
 /* ── VERSIE EN BIJWERKEN ────────────────────────────────────────────────────
    Twee toestanden die er echt anders uit moeten zien: "je bent bij" is rustig,

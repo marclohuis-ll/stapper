@@ -72,7 +72,7 @@ const STICKER_FOR = {
   cache: 'inventory_2',
 };
 
-const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','rondjes','boek','profiel'];
+const SCREENS = ['welkom','home','instellen','startpunt','zoeken','resultaten','detail','bewerken','onderweg','kind','recap','rondjes','boek','profiel'];
 
 /* ── Het menu ────────────────────────────────────────────────────────────────
    Vier vaste plekken, en de rest van de app hangt eraan als een reis: je zoekt
@@ -144,6 +144,17 @@ const state = {
   /* Welke versie draait er, en staat er een nieuwe klaar. Zie initVersie(). */
   versie: { naam: null, uitgebracht: null, staat: 'onbekend' },
 
+  /* Plat of gekanteld tijdens het lopen. Blijft bewaard: dit is een voorkeur,
+   * geen instelling die je per wandeling opnieuw wil kiezen. */
+  aanzicht: 'plat',
+
+  /* Een wandeling die niet is afgemaakt — na een herlaadactie of een afsluiting.
+   * Zie de hervat-kaart op het beginscherm. */
+  hervat: null,
+
+  /* De wandeling die op de terugblik staat. */
+  recap: null,
+
   /* Op het beginscherm zetten. `installer` is het beforeinstallprompt-event dat
    * Chrome ons geeft; dat mag je maar één keer gebruiken, dus we bewaren het. */
   installer: null,
@@ -165,7 +176,23 @@ const walk = {
   override: false,    // ontsnappingsluik zichtbaar na een mislukte poging
   stopWatch: null,
   stopCompass: null,
+
+  /* Volgt de kaart je positie? Gaat uit zodra jíj de kaart pakt, want anders schiet
+   * hij bij elke GPS-tik terug en kun je nooit verder vooruit op de route kijken. */
   follow: true,
+  stopKaartKijk: null,
+
+  /* Richting waarin je loopt, uit de opeenvolgende posities. Niet het kompas: dat
+   * zegt waar de telefoon heen wijst, niet waar jij heen loopt — en op een
+   * gekantelde kaart is dat laatste wat je boven wil hebben. */
+  koers: null,
+  vorigePunt: null,
+
+  /* Het echt gelopen spoor, uitgedund, voor de terugblik. */
+  trail: [],
+  startedAt: null,
+  bewaardOp: 0,
+  klaarGemeld: false,
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
@@ -225,6 +252,7 @@ views.home = () => `
         </div>
 
         ${locationPill()}
+        ${hervatKaart()}
         ${installKaart()}
 
         <button class="bigcard" data-go="instellen">
@@ -258,6 +286,30 @@ views.home = () => `
       </div>
     </div>
   </div>`;
+
+/**
+ * "Je was aan het lopen." Verschijnt als er een wandeling open is blijven staan —
+ * na een per ongeluk herladen pagina, of omdat je de app dichtdeed.
+ *
+ * Staat bovenaan en met de lime knop, want dit is bijna altijd wat je wil: je stond
+ * midden in een bos en je telefoon deed iets onverwachts.
+ */
+function hervatKaart() {
+  const h = state.hervat;
+  if (!h || !h.route) return '';
+  const gedaan = komma(((h.voortgang && h.voortgang.walkedM) || 0) / 1000);
+
+  return `
+  <div class="hervat">
+    <span class="hervat__ico">${ico('resume')}</span>
+    <span class="hervat__text">
+      <span class="hervat__title">Je was aan het lopen</span>
+      <span class="hervat__sub">${esc(h.route.naam)} — ${gedaan} van ${esc(h.route.km)} gedaan</span>
+    </span>
+    <button class="hervat__doe" data-act="hervat-wandeling">Verder</button>
+    <button class="hervat__weg" data-act="hervat-weg" aria-label="Wandeling weggooien">${ico('close')}</button>
+  </div>`;
+}
 
 /** Wat er onder "Je rondjes" staat: liever de aantallen dan het woord "bekijken". */
 function rondjesSamenvatting() {
@@ -1113,8 +1165,21 @@ views.onderweg = () => {
     <div class="onderweg">
       <div class="onderweg__map" id="onderweg-map"></div>
 
+      <div class="kaartknoppen">
+        <button class="kaartknop ${state.aanzicht === 'schuin' ? 'kaartknop--aan' : ''}"
+                data-act="aanzicht" aria-pressed="${state.aanzicht === 'schuin'}"
+                aria-label="${state.aanzicht === 'schuin' ? 'Platte kaart' : 'Gekantelde kaart'}">
+          ${ico(state.aanzicht === 'schuin' ? 'map' : 'deployed_code')}
+          <span class="kaartknop__label">${state.aanzicht === 'schuin' ? '2D' : '3D'}</span>
+        </button>
+        <button class="kaartknop kaartknop--volg" data-act="volg-mij" data-volg
+                hidden aria-label="Kaart weer op mij richten">
+          ${ico('my_location')}
+        </button>
+      </div>
+
       <div class="onderweg__hud">
-        <button class="onderweg__close" data-go="detail" aria-label="Wandeling afsluiten">${ico('close')}</button>
+        <button class="onderweg__close" data-act="stop-wandeling" aria-label="Wandeling afsluiten">${ico('close')}</button>
         <div class="progress">
           <div class="progress__row">
             <span data-walked>${pr ? komma(pr.walkedM / 1000) : '0,0'} van ${esc(r.km)}</span>
@@ -1141,12 +1206,16 @@ views.onderweg = () => {
             </div>
           </div>
           <div class="nextcard__actions">
-            <button class="btn-ghost" data-act="pauze" aria-pressed="${state.pauze}">
-              ${state.pauze ? 'Doorlopen' : 'Pauze'}
-            </button>
-            <button class="btn-kid" data-act="to-kind">
-              ${ico('child_care')}Kind wijst de weg
-            </button>
+            ${pr && pr.done ? `
+              <button class="btn-cta btn-cta--flex" data-act="stop-wandeling">
+                Bekijk jullie wandeling
+              </button>` : `
+              <button class="btn-ghost" data-act="pauze" aria-pressed="${state.pauze}">
+                ${state.pauze ? 'Doorlopen' : 'Pauze'}
+              </button>
+              <button class="btn-kid" data-act="to-kind">
+                ${ico('child_care')}Kind wijst de weg
+              </button>`}
           </div>
         </div>
       </div>
@@ -1374,15 +1443,18 @@ views.boek = () => {
   </div>`;
 };
 
-/* Een gelopen wandeling. Geen knop: er valt niets te openen, het is een herinnering. */
+/* Een gelopen wandeling. Wél een knop: erop tikken opent de terugblik met het
+ * gelopen spoor erin. Wandelingen van vóór deze versie hebben dat spoor niet — die
+ * openen dan met alleen de cijfers, en dat is beter dan een knop die niets doet. */
 const wandelingRij = (w) => `
-  <div class="wandeling">
+  <button class="wandeling" data-act="open-wandeling" data-id="${esc(w.id)}">
     <span class="wandeling__ico">${ico(w.voltooid ? 'flag' : 'footprint')}</span>
     <span class="wandeling__text">
       <span class="wandeling__naam">${esc(w.naam || 'Een rondje')}</span>
       <span class="wandeling__meta">${esc(wandelingMeta(w))}</span>
     </span>
-  </div>`;
+    ${ico('chevron_right', 'wandeling__chev')}
+  </button>`;
 
 function wandelingMeta(w) {
   const d = [];
@@ -1597,7 +1669,7 @@ function render() {
   photoUrls.forEach(URL.revokeObjectURL);
   photoUrls = [];
 
-  const kaartSchermen = ['detail', 'bewerken', 'onderweg', 'startpunt'];
+  const kaartSchermen = ['detail', 'bewerken', 'onderweg', 'startpunt', 'recap'];
   if (kaartSchermen.includes(lastScreen) && !kaartSchermen.includes(state.screen)) {
     mapview.detach();
   }
@@ -1635,6 +1707,22 @@ async function mountMap() {
     return;
   }
 
+  /* De terugblik: bedoelde route en gelopen spoor naast elkaar, plat en stil. */
+  if (state.screen === 'recap') {
+    const host = document.getElementById('recap-map');
+    const w = state.recap;
+    if (!host || !w) return;
+    await mapview.attach(window.maplibregl, host);
+    mapview.setAanzicht('plat');
+    mapview.setRouteVisible(true);
+    mapview.render({
+      route: w.coords ? { coords: w.coords, pois: [] } : null,
+      trail: w.trail || null,
+      position: null, padding: 34, fit: true,
+    });
+    return;
+  }
+
   if (state.screen === 'startpunt') {
     const host = document.getElementById('startpunt-map');
     if (!host) return;
@@ -1653,12 +1741,58 @@ async function mountMap() {
   if (!host || !route) return;
   await mapview.attach(window.maplibregl, host);
   const pr = walk.progress;
+  const onderweg = state.screen === 'onderweg';
+
+  // Het detailscherm is altijd plat: daar kijk je naar een route, niet vooruit.
+  mapview.setAanzicht(onderweg ? state.aanzicht : 'plat');
+
   mapview.render({
-    route, position: state.position, padding: 46,
-    progress: state.screen === 'onderweg' && pr && route.distanceM
-      ? pr.walkedM / route.distanceM : null,
+    route, position: state.position, padding: 46, fit: !onderweg,
+    progress: onderweg && pr && route.distanceM ? pr.walkedM / route.distanceM : null,
   });
-  if (state.screen === 'onderweg' && state.position) mapview.centreOn(state.position, 16);
+
+  if (!onderweg) return;
+  // Alleen centreren als het volgen aan staat: kom je terug uit de kindmodus nadat
+  // je de kaart hebt weggeschoven, dan hoort hij te blijven staan waar je hem liet.
+  if (walk.follow && state.position) mapview.volg(state.position, walk.koers);
+  koppelKaartKijk();
+}
+
+/**
+ * Zodra jij de kaart pakt, stopt het volgen — en komt er een knop om het weer aan
+ * te zetten. Zonder dit schoot de kaart bij elke GPS-tik terug naar je eigen
+ * positie en kon je dus nooit even verder vooruit op de route kijken.
+ */
+function koppelKaartKijk() {
+  if (walk.stopKaartKijk) walk.stopKaartKijk();
+  walk.stopKaartKijk = mapview.onUserMove(() => {
+    if (!walk.follow) return;
+    walk.follow = false;
+    toonVolgKnop();
+  });
+  toonVolgKnop();
+}
+
+function toonVolgKnop() {
+  const b = app.querySelector('[data-volg]');
+  if (b) b.hidden = walk.follow;
+}
+
+function volgWeer() {
+  walk.follow = true;
+  toonVolgKnop();
+  if (state.position) mapview.volg(state.position, walk.koers, { zacht: true });
+}
+
+function wisselAanzicht() {
+  state.aanzicht = state.aanzicht === 'schuin' ? 'plat' : 'schuin';
+  store.setSetting('aanzicht', state.aanzicht).catch(() => {});
+  mapview.setAanzicht(state.aanzicht);
+  // Volgen weer aan: je hebt net gezegd hóe je wil kijken, dus wil je ook zien waar
+  // je bent. En in gekantelde stand is een kaart die niet meedraait onbruikbaar.
+  walk.follow = true;
+  if (state.position) mapview.volg(state.position, walk.koers, { zacht: true });
+  render();
 }
 
 /* ── Live tracking ────────────────────────────────────────────────────────
@@ -1669,10 +1803,25 @@ function startWalk() {
   const route = currentRoute();
   if (!route || walk.tracker) return;
 
-  walk.tracker = createTracker(route);
-  walk.progress = null;
+  const hervat = hervatKlaar;
+  hervatKlaar = null;
+
+  walk.tracker = createTracker(route, hervat);
+  // Bij hervatten meteen één keer doorrekenen, zodat de balk en de kaart de al
+  // gelopen kilometers laten zien in plaats van nul tot de eerste GPS-tik.
+  walk.progress = hervat
+    ? walk.tracker.update(state.position || {
+        lat: route.coords[0][1], lon: route.coords[0][0], accuracy: 99,
+      })
+    : null;
   walk.override = false;
   walk.follow = true;
+  walk.koers = null;
+  walk.vorigePunt = null;
+  walk.trail = hervat && Array.isArray(hervat.trail) ? hervat.trail.slice() : [];
+  walk.startedAt = (hervat && hervat.startedAt) || Date.now();
+  walk.bewaardOp = 0;
+  walk.klaarGemeld = false;
   state.pauze = false;
   hervatVolgen();
 }
@@ -1684,9 +1833,22 @@ function hervatVolgen() {
   if (!route) return;
 
   const onMove = (p) => {
+    volgKoers(p);
+    volgSpoor(p);
     state.position = p;
     walk.progress = walk.tracker.update(p);
+
+    // Rondje rond: één keer hertekenen, zodat de kaart de knop naar de terugblik
+    // krijgt in plaats van de pauzeknop. Daarna weer alleen ter plekke bijwerken.
+    if (walk.progress.done && !walk.klaarGemeld) {
+      walk.klaarGemeld = true;
+      bewaarLopend({ nu: true });
+      render();
+      return;
+    }
+
     paintWalk();
+    bewaarLopend();
   };
 
   const sim = simulationSetting();
@@ -1701,15 +1863,90 @@ function hervatVolgen() {
   walk.stopCompass = startCompass((h) => { walk.heading = h; paintNeedle(); });
 }
 
-function stopWalk() {
-  legWandelingVast();
+function stopWalk({ vastleggen = true } = {}) {
+  const vast = vastleggen ? legWandelingVast() : null;
+  /* Het wandelscherm verlaten is een besluit, dus de lopende wandeling is voorbij.
+   * Een herlaadactie komt hier nooit langs — precies het geval dat wél hervat moet
+   * worden. Zonder dit zou er later een hervat-kaart opduiken voor een wandeling die
+   * al in het boek staat, en tel je hem dubbel. */
+  store.clearLopend().catch(() => {});
+  state.hervat = null;
   if (walk.stopWatch) walk.stopWatch();
   if (walk.stopCompass) walk.stopCompass();
+  if (walk.stopKaartKijk) walk.stopKaartKijk();
   clearTimeout(walk.nudgeTimer);
   Object.assign(walk, {
     tracker: null, progress: null, heading: null, sticker: null,
     nudge: '', override: false, stopWatch: null, stopCompass: null,
+    stopKaartKijk: null, koers: null, vorigePunt: null, trail: [],
+    startedAt: null, bewaardOp: 0, klaarGemeld: false,
   });
+  return vast;
+}
+
+/* ── Waar je heen loopt, en waar je geweest bent ────────────────────────────── */
+
+/**
+ * Looprichting uit opeenvolgende posities, gladgestreken.
+ *
+ * Níet het kompas: dat zegt waar de telefoon heen wijst. Met een telefoon los in je
+ * hand of scheef in je zak klapt een op het kompas gedraaide kaart alle kanten op.
+ * Waar je heen *loopt* is stabieler, en dat is ook wat je boven wil hebben.
+ *
+ * Onder 6 meter negeren we de beweging: GPS-ruis onder een bladerdek zou anders een
+ * willekeurige richting opleveren terwijl je stilstaat.
+ */
+function volgKoers(p) {
+  const nu = [p.lon, p.lat];
+  const vorig = walk.vorigePunt;
+  if (!vorig) { walk.vorigePunt = nu; return; }
+  if (distM(vorig, nu) < 6) return;
+
+  const nieuw = bearing(vorig, nu);
+  walk.vorigePunt = nu;
+  if (walk.koers == null) { walk.koers = nieuw; return; }
+
+  // Over de eenheidscirkel mengen, anders springt 350° → 10° door 180 heen.
+  const w = 0.35;
+  const r = Math.PI / 180;
+  const x = Math.cos(walk.koers * r) * (1 - w) + Math.cos(nieuw * r) * w;
+  const y = Math.sin(walk.koers * r) * (1 - w) + Math.sin(nieuw * r) * w;
+  walk.koers = (Math.atan2(y, x) / r + 360) % 360;
+}
+
+/** Het spoor uitgedund bijhouden: elke 15 meter een punt is genoeg om de vorm te
+ *  bewaren, en houdt een wandeling van 6 km op een paar honderd punten. */
+function volgSpoor(p) {
+  const nu = [p.lon, p.lat];
+  const laatste = walk.trail[walk.trail.length - 1];
+  if (!laatste || distM(laatste, nu) >= 15) walk.trail.push(nu);
+}
+
+/**
+ * De lopende wandeling wegschrijven.
+ *
+ * Bestaat om één reden: per ongeluk naar beneden trekken herlaadt de app, en dan was
+ * je hele wandeling weg. De hele route gaat mee, want na een herlaadactie is
+ * `state.routes` leeg en een net gegenereerd rondje is dan nergens meer te vinden.
+ *
+ * Hoogstens elke 4 seconden, want dit gebeurt bij elke GPS-tik en de opslag hoeft de
+ * wandeling niet op te houden.
+ */
+function bewaarLopend({ nu = false } = {}) {
+  if (!walk.tracker) return;
+  const t = Date.now();
+  if (!nu && t - walk.bewaardOp < 4000) return;
+  walk.bewaardOp = t;
+
+  const r = currentRoute();
+  if (!r) return;
+  store.setLopend({
+    route: r,
+    voortgang: walk.tracker.snapshot(),
+    trail: walk.trail,
+    startedAt: walk.startedAt,
+    bewaardOp: t,
+  }).catch((e) => console.warn('lopende wandeling niet bewaard:', e.message));
 }
 
 const paintText = (sel, text) => {
@@ -1741,7 +1978,7 @@ function paintWalk() {
       route: r, position: state.position, fit: false,
       progress: r.distanceM ? pr.walkedM / r.distanceM : 0,
     });
-    if (walk.follow) mapview.centreOn(state.position, 16);
+    if (walk.follow) mapview.volg(state.position, walk.koers);
   }
 
   if (state.screen === 'kind') {
@@ -1810,10 +2047,11 @@ function refreshIfShowing(...screens) {
 async function laadOpslag() {
   try {
     store.requestPersistence();          // niet op wachten; het is een verzoek
-    const [profiel, stickers, saved, walks, photos, code, gpxBron, caches] = await Promise.all([
+    const [profiel, stickers, saved, walks, photos, code, gpxBron, caches,
+           aanzicht, lopend] = await Promise.all([
       store.getProfile(), store.listStickers(), store.listSavedRoutes(), store.listWalks(),
       store.listPhotos(), store.getSetting('parentCode'), store.getSetting('gpxBron'),
-      store.listCaches(),
+      store.listCaches(), store.getSetting('aanzicht'), store.getLopend(),
     ]);
     state.photos = photos;
     // Alleen overnemen als er echt een profiel staat; anders het huidige bewaren.
@@ -1825,11 +2063,41 @@ async function laadOpslag() {
     state.parentCode = code || null;
     state.gpxBron = gpxBron || null;
     state.caches = caches || [];
+    if (aanzicht === 'plat' || aanzicht === 'schuin') state.aanzicht = aanzicht;
+    pakLopendeOp(lopend);
     render();
   } catch (e) {
     // Zonder opslag werkt de app verder; alleen het boek onthoudt niets.
     console.warn('opslag niet beschikbaar:', e.message);
   }
+}
+
+/**
+ * Wat te doen met een wandeling die open bleef staan.
+ *
+ * Sta je nog op `#/onderweg` of in de kindmodus, dan is de app net herladen terwijl
+ * je liep — dan pak je hem stil weer op. Dat is de hele reden dat dit bestaat: een
+ * per ongeluk naar beneden getrokken pagina mag je wandeling niet kosten.
+ *
+ * Open je de app gewoon opnieuw, dan verschijnt er een kaart op het beginscherm.
+ * Ongevraagd in een wandeling belanden is verwarrend; één tik is genoeg.
+ *
+ * Ouder dan een halve dag laten we vallen. Dat is geen onderbreking meer maar een
+ * vergeten wandeling, en die weer oppakken zou onzin optellen.
+ */
+function pakLopendeOp(lopend) {
+  if (!lopend || !lopend.route || !lopend.route.coords) return;
+
+  const uren = (Date.now() - (lopend.bewaardOp || 0)) / 36e5;
+  if (uren > 12) { store.clearLopend().catch(() => {}); return; }
+
+  const middenIn = state.screen === 'onderweg' || state.screen === 'kind';
+  if (!middenIn) { state.hervat = lopend; return; }
+
+  state.routes = [lopend.route, ...state.routes.filter((x) => x.id !== lopend.route.id)];
+  state.routeId = 0;
+  hervatKlaar = { ...(lopend.voortgang || {}), trail: lopend.trail, startedAt: lopend.startedAt };
+  if (!walk.tracker) startWalk();
 }
 
 async function bewaarRoute(button) {
@@ -2058,20 +2326,164 @@ async function checkOffline() {
   } catch { /* geen cache-ondersteuning; dan blijft de knop gewoon staan */ }
 }
 
-/** Wandeling vastleggen als er echt gelopen is. Zo blijven de statistieken in
- *  het stickerboek eerlijk: even naar het scherm kijken is geen wandeling. */
+/**
+ * Wandeling vastleggen als er echt gelopen is. Zo blijven de statistieken in het
+ * stickerboek eerlijk: even naar het scherm kijken is geen wandeling.
+ *
+ * De routelijn en het gelopen spoor gaan mee, want daar bestaat de terugblik uit —
+ * en zonder dat kun je een wandeling van vorige maand alleen nog als getal zien.
+ */
 function legWandelingVast() {
   const r = currentRoute();
   const pr = walk.progress;
-  if (!r || !pr || pr.walkedM < 250) return;
-  store.recordWalk({
-    id: `walk-${Date.now()}`, naam: r.naam, km: r.km,
-    distanceM: r.distanceM, walkedM: Math.round(pr.walkedM),
-    punten: pr.reachedCount, voltooid: pr.done,
-  }).then(() => store.listWalks())
-    .then((all) => { state.walks = all; refreshIfShowing('profiel', 'home'); })
+  if (!r || !pr || pr.walkedM < 250) return null;
+
+  const record = {
+    id: `walk-${Date.now()}`,
+    naam: r.naam,
+    km: r.km,
+    distanceM: r.distanceM,
+    walkedM: Math.round(pr.walkedM),
+    punten: pr.reachedCount,
+    puntenTotaal: walk.tracker ? walk.tracker.pois.length : r.pois.length,
+    voltooid: pr.done,
+    duurS: walk.startedAt ? Math.round((Date.now() - walk.startedAt) / 1000) : null,
+    gevonden: walk.tracker
+      ? walk.tracker.pois.filter((p) => p.reached).map((p) => ({ naam: p.naam, icon: p.icon, category: p.category }))
+      : [],
+    coords: r.coords,
+    trail: walk.trail.slice(),
+    pathShare: r.pathShare ?? null,
+  };
+
+  store.recordWalk(record)
+    .then(() => store.listWalks())
+    .then((all) => { state.walks = all; refreshIfShowing('profiel', 'home', 'boek'); })
     .catch((e) => console.warn('wandeling niet opgeslagen:', e.message));
+
+  return { ...record, at: Date.now() };
 }
+
+/**
+ * De wandeling afsluiten.
+ *
+ * Heb je echt gelopen, dan volgt de terugblik — anders was het een verkeerde tik en
+ * ga je gewoon terug naar de route. In beide gevallen is de lopende wandeling weg,
+ * zodat er niet later een hervat-kaart opduikt voor iets dat je hebt afgesloten.
+ */
+function sluitWandeling() {
+  const vast = stopWalk();
+  store.clearLopend().catch(() => {});
+  state.hervat = null;
+  state.recap = vast;
+  go(vast ? 'recap' : 'detail');
+}
+
+/**
+ * Een onderbroken wandeling weer oppakken.
+ *
+ * De route komt uit de opslag en niet uit `state.routes`: na een herlaadactie is die
+ * lijst leeg, en een net gegenereerd rondje bestaat dan nergens meer.
+ */
+function hervatWandeling() {
+  const h = state.hervat;
+  if (!h || !h.route) return;
+
+  state.routes = [h.route, ...state.routes.filter((x) => x.id !== h.route.id)];
+  state.routeId = 0;
+  state.detailVan = 'rondjes';
+  state.hervat = null;
+  hervatKlaar = { ...(h.voortgang || {}), trail: h.trail, startedAt: h.startedAt };
+  go('onderweg');
+}
+
+/* Doorgeefluik naar startWalk(), die vanuit enter() geroepen wordt en dus geen
+ * argument mee kan krijgen. Eén keer geldig: daarna begint een wandeling gewoon. */
+let hervatKlaar = null;
+
+/* ── De terugblik ────────────────────────────────────────────────────────────
+   Na de wandeling wil je zien wát je gelopen hebt. Niet de bedoelde route maar de
+   echte: het spoor uit de GPS, naast de lijn die je van plan was.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Gemiddelde lengte per leeftijd in centimeters. Staplengte is ruwweg 0,42 × je
+ * lengte; dat is de vuistregel waar stappentellers ook mee beginnen. Er is geen
+ * stappenteller in een browser, dus dit is en blijft een schatting — en de app
+ * zegt dat er dan ook bij in plaats van een precies getal te suggereren. */
+const LENGTE_CM = {
+  2: 87, 3: 95, 4: 103, 5: 110, 6: 116, 7: 122, 8: 128, 9: 133, 10: 139, 11: 145, 12: 152,
+};
+
+function stappenVoor(meters, leeftijd) {
+  const jaar = Math.round(Number(leeftijd) || 6);
+  const cm = LENGTE_CM[Math.max(2, Math.min(12, jaar))] || 116;
+  const stapM = 0.42 * (jaar > 12 ? 1.68 : cm / 100);
+  // Op vijftigtallen afronden: alles preciezer dan dat zou doen alsof het gemeten is.
+  return Math.max(0, Math.round(meters / stapM / 50) * 50);
+}
+
+views.recap = () => {
+  const w = state.recap;
+  if (!w) return views.boek();
+
+  const stappen = stappenVoor(w.walkedM || 0, state.profile.leeftijd);
+  const minuten = w.duurS ? Math.round(w.duurS / 60) : null;
+
+  return `
+  <div class="screen">
+    <div class="screen__body pad-footer">
+      <div class="sheet">
+        <div class="recap__hero" id="recap-map">
+          <button class="detail__back" data-act="recap-terug" aria-label="Terug">${ico('arrow_back')}</button>
+          <span class="recap__legenda">
+            <span class="recap__leg"><i class="recap__streep recap__streep--route"></i>bedoeld</span>
+            <span class="recap__leg"><i class="recap__streep recap__streep--trail"></i>gelopen</span>
+          </span>
+        </div>
+
+        <div class="detail__sheet">
+          <div class="detail__grip"></div>
+          <div class="recap__kicker">${w.voltooid ? 'Rondje rond!' : 'Onderweg gestopt'}</div>
+          <h1 class="detail__title">${esc(w.naam || 'Jullie wandeling')}</h1>
+
+          <div class="cijfers cijfers--recap">
+            ${cijfer(komma((w.walkedM || 0) / 1000), 'km gelopen')}
+            ${cijfer(`± ${stappen.toLocaleString('nl-NL')}`, 'stappen')}
+            ${cijfer(minuten == null ? '—' : minuten, 'min onderweg')}
+          </div>
+
+          <p class="hint-line">De stappen zijn geschat uit de afstand en de gemiddelde
+            staplengte bij ${state.profile.leeftijd} jaar; een browser heeft geen
+            stappenteller. De tijd is van start tot afsluiten, dus pauzes en
+            stilstaan bij een bruggetje zitten erin — er is geen manier om lopen van
+            kijken te onderscheiden.</p>
+
+          ${(w.gevonden || []).length ? `
+            <div class="section-head section-head--tight">Gevonden onderweg</div>
+            <div class="poi-list">
+              ${w.gevonden.map((p) => `
+                <div class="poi">
+                  <span class="poi__ico">${ico(STICKER_FOR[p.category] || p.icon || 'star')}</span>
+                  <span class="poi__text">
+                    <span class="poi__name">${esc(p.naam)}</span>
+                    <span class="poi__meta">sticker in het boek</span>
+                  </span>
+                </div>`).join('')}
+            </div>`
+          : `<p class="hint-line">Onderweg is er niets afgevinkt. Dat mag ook — een
+              rondje lopen is genoeg.</p>`}
+
+          ${w.puntenTotaal ? `<p class="hint-line">${w.punten} van ${w.puntenTotaal}
+            punten gevonden${w.voltooid ? ', en het rondje is rond' : ''}.</p>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="screen__footer">
+      <button class="btn-cta" data-act="recap-klaar">Klaar</button>
+    </div>
+  </div>`;
+};
 
 /* ── De drie tegels in de kindmodus ─────────────────────────────────────── */
 
@@ -2394,6 +2806,34 @@ app.addEventListener('click', (e) => {
 
     case 'zoek-update':    zoekUpdate(); break;
     case 'werk-bij':       werkBij(); break;
+
+    /* ── onderweg: de kaart ── */
+    case 'aanzicht':  wisselAanzicht(); break;
+    case 'volg-mij':  volgWeer(); break;
+
+    /* ── de wandeling afsluiten en terugblikken ── */
+    case 'stop-wandeling': sluitWandeling(); break;
+    case 'recap-klaar':
+    case 'recap-terug':
+      state.recap = null;
+      go('boek');
+      break;
+
+    case 'open-wandeling': {
+      const w = state.walks.find((x) => x.id === el.dataset.id);
+      if (!w) break;
+      state.recap = w;
+      go('recap');
+      break;
+    }
+
+    /* ── een onderbroken wandeling ── */
+    case 'hervat-wandeling': hervatWandeling(); break;
+    case 'hervat-weg':
+      state.hervat = null;
+      store.clearLopend().catch(() => {});
+      render();
+      break;
     case 'cancel-setting': state.editSetting = null;  render(); break;
 
     case 'pauze': togglePauze(); break;
@@ -2555,6 +2995,16 @@ window.addEventListener('beforeinstallprompt', (e) => {
   state.installer = e;
   refreshIfShowing('home', 'profiel');
 });
+
+/* De app kan elk moment weggeschoven of gesloten worden. Dan moet de laatste stand
+ * van de wandeling er nog in staan, niet die van vier seconden eerder. */
+for (const gebeurtenis of ['pagehide', 'visibilitychange']) {
+  window.addEventListener(gebeurtenis, () => {
+    if (walk.tracker && (gebeurtenis === 'pagehide' || document.hidden)) {
+      bewaarLopend({ nu: true });
+    }
+  });
+}
 
 window.addEventListener('appinstalled', () => {
   state.installer = null;

@@ -36,7 +36,7 @@ function ensure(maplibregl) {
 
     map.addLayer({
       id: 'route-shadow', type: 'line', source: SRC,
-      filter: ['==', ['geometry-type'], 'LineString'],
+      filter: ['==', ['get', 'soort'], 'route'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       // Donkere baan onder de route. Breed genoeg om de route los te maken van
       // de gestippelde paadjes eronder, die sinds de kaartlabels ook lime zijn.
@@ -44,11 +44,21 @@ function ensure(maplibregl) {
     });
     map.addLayer({
       id: 'route-line', type: 'line', source: SRC,
-      filter: ['==', ['geometry-type'], 'LineString'],
+      filter: ['==', ['get', 'soort'], 'route'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       // Doorlopend en fors: het onderscheid met de gestippelde paadjes zit in
       // breedte en in wel/niet onderbroken, niet in kleur.
       paint: { 'line-width': 6.5, 'line-gradient': gradientFor(null) },
+    });
+    /* Waar je écht gelopen hebt, uit de GPS. Alleen op de terugblik: tijdens de
+     * wandeling zou een tweede lijn naast de route vooral ruis zijn. Muntgroen en
+     * dunner, zodat de bedoelde route en de gelopen route naast elkaar te lezen
+     * zijn — dat verschil is precies wat een terugblik interessant maakt. */
+    map.addLayer({
+      id: 'trail-line', type: 'line', source: SRC,
+      filter: ['==', ['get', 'soort'], 'trail'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': MAP_COLOURS.mint || '#6FE3D0', 'line-width': 4, 'line-opacity': .95 },
     });
     map.addLayer({
       id: 'route-poi', type: 'circle', source: SRC,
@@ -125,7 +135,9 @@ export function detach() {
 }
 
 /** Zet route en eigen positie op de kaart. Beide mogen ontbreken. */
-export function render({ route, position, progress = null, fit = true, padding = 40 }) {
+export function render({
+  route, position, progress = null, fit = true, padding = 40, trail = null,
+}) {
   if (!map || !map.getSource(SRC)) return;
 
   // Gelopen deel helder, de rest gedempt. Op het detailscherm (geen voortgang)
@@ -135,9 +147,15 @@ export function render({ route, position, progress = null, fit = true, padding =
   }
 
   const features = [];
+  if (trail && trail.length > 1) {
+    features.push({
+      type: 'Feature', properties: { soort: 'trail' },
+      geometry: { type: 'LineString', coordinates: trail },
+    });
+  }
   if (route) {
     features.push({
-      type: 'Feature', properties: {},
+      type: 'Feature', properties: { soort: 'route' },
       geometry: { type: 'LineString', coordinates: route.coords },
     });
     route.pois.forEach((p, i) => features.push({
@@ -154,8 +172,11 @@ export function render({ route, position, progress = null, fit = true, padding =
   }
   map.getSource(SRC).setData({ type: 'FeatureCollection', features });
 
-  if (fit && route && route.coords.length) {
-    const b = route.coords.reduce(
+  if (fit && ((route && route.coords.length) || (trail && trail.length))) {
+    // Bedoelde route én gelopen spoor samen in beeld: op de terugblik is een
+    // uitstapje buiten de route juist het interessante deel.
+    const punten = [...(route ? route.coords : []), ...(trail || [])];
+    const b = punten.reduce(
       (acc, c) => [Math.min(acc[0], c[0]), Math.min(acc[1], c[1]),
                    Math.max(acc[2], c[0]), Math.max(acc[3], c[1])],
       [Infinity, Infinity, -Infinity, -Infinity]);
@@ -183,6 +204,74 @@ export function setRouteVisible(zichtbaar) {
 export function centreOn(position, zoom = 16) {
   if (!map || !position) return;
   map.jumpTo({ center: [position.lon, position.lat], zoom });
+}
+
+/* ── Onderweg: platte kaart of gekantelde kaart ──────────────────────────────
+   Twee standen, en het verschil is niet decoratief.
+
+   `plat` is de kaart als overzicht: noord boven, geen kanteling, je ziet de hele
+   lus. Goed om te weten waar je bent.
+
+   `schuin` is de kaart als vooruitzicht: gekanteld, en gedraaid naar de kant waar
+   je heen loopt, dus wat vóór je op het scherm staat is ook wat vóór je ligt. Dat
+   is waar je "welk pad neem ik" mee beantwoordt. Huizen komen dan overeind, want
+   zonder hoogte is een gekantelde kaart alleen een uitgerekte platte kaart.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+const AANZICHT = {
+  plat:   { pitch: 0,  zoom: 16,   koersVolgen: false },
+  schuin: { pitch: 58, zoom: 17.2, koersVolgen: true },
+};
+
+let aanzicht = 'plat';
+
+export function setAanzicht(soort) {
+  aanzicht = AANZICHT[soort] ? soort : 'plat';
+  if (!map) return;
+  if (map.getLayer('building-3d')) {
+    map.setLayoutProperty('building-3d', 'visibility', aanzicht === 'schuin' ? 'visible' : 'none');
+  }
+  // Terug naar plat betekent ook: noord weer boven. Anders blijf je met een
+  // scheve kaart zitten en is "plat" maar half waar.
+  if (aanzicht === 'plat') map.easeTo({ pitch: 0, bearing: 0, duration: 420 });
+  else map.easeTo({ pitch: AANZICHT.schuin.pitch, duration: 420 });
+}
+
+export const huidigAanzicht = () => aanzicht;
+
+/**
+ * De kaart op jouw positie zetten zoals het huidige aanzicht dat wil.
+ *
+ * @param {{lat:number,lon:number}} position
+ * @param {number|null} course  richting waarin je loopt, in graden; null = onbekend
+ * @param {boolean} zacht      met een animatie (na een tik) of meteen (elke GPS-tik)
+ */
+export function volg(position, course = null, { zacht = false } = {}) {
+  if (!map || !position) return;
+  const a = AANZICHT[aanzicht];
+
+  const doel = { center: [position.lon, position.lat], zoom: a.zoom, pitch: a.pitch };
+  // Alleen draaien als we een koers hebben. Zonder koers de kaart op 0 zetten zou
+  // hem bij elke tik terugklappen naar noord, en dat is erger dan niet draaien.
+  if (a.koersVolgen && Number.isFinite(course)) doel.bearing = course;
+
+  if (zacht) map.easeTo({ ...doel, duration: 520 });
+  else map.jumpTo(doel);
+}
+
+/**
+ * Merkt wanneer de gebruiker zélf de kaart pakt.
+ *
+ * `originalEvent` is het onderscheid: bij slepen, knijpen of draaien met een vinger
+ * zit die erin, bij onze eigen jumpTo/easeTo niet. Zonder dat onderscheid zet de
+ * app het volgen uit op zijn eigen bewegingen en dan volgt hij nooit meer.
+ */
+export function onUserMove(cb) {
+  if (!map) return () => {};
+  const soorten = ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'];
+  const h = (e) => { if (e && e.originalEvent) cb(); };
+  soorten.forEach((s) => map.on(s, h));
+  return () => soorten.forEach((s) => map.off(s, h));
 }
 
 /* ── Mini-kaartje voor de resultaatkaartjes ───────────────────────────────

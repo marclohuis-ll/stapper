@@ -202,7 +202,7 @@ En in de console van de app:
 | [src/map-style.js](src/map-style.js) | kaartstijl in het Boslamp-palet + oogst-stijl |
 | [src/mapview.js](src/mapview.js) | één MapLibre-instantie die tussen schermen verhuist |
 | [src/geolocate.js](src/geolocate.js) | positie, met duidelijke fout bij http |
-| [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel |
+| [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel, hervatten |
 | [src/compass.js](src/compass.js) | kompas voor de kindmodus, gedempt over de eenheidscirkel |
 | [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
 | [src/store.js](src/store.js) | IndexedDB: profiel, stickers, foto's, rondjes, wandelingen |
@@ -228,9 +228,93 @@ linken.
 | `#/bewerken` | Route verslepen op een schermvullende kaart | echt |
 | `#/onderweg` | Live wandeling: kaart, voortgang, volgend punt | echt |
 | `#/kind` | Kindmodus: kompas, afstand, sticker | echt |
+| `#/recap` | Terugblik: gelopen spoor, km, stappen, gevonden punten | echt |
 | `#/rondjes` | Net gevonden en bewaarde rondjes | echt |
 | `#/boek` | Stickerboek: stickers, foto's, gelopen wandelingen | echt |
 | `#/profiel` | Kind, instellingen, appversie en bijwerken | echt |
+
+## Onderweg
+
+### De kaart blijft staan waar jij hem zet
+
+De kaart volgt je positie, maar zodra je hem zélf pakt houdt hij op met volgen en
+verschijnt er rechtsboven een knop om terug te springen. Zonder dat schoot hij bij
+elke GPS-tik terug en kon je dus nooit even verder vooruit op de route kijken.
+
+Het onderscheid tussen "jij sleept" en "de app centreert" zit in `originalEvent`: dat
+zit in een MapLibre-gebeurtenis van een vinger, en niet in onze eigen `jumpTo` of
+`easeTo`. Zonder die controle zet de app het volgen uit op zijn eigen bewegingen, en
+volgt hij dus nooit meer.
+
+### Plat of gekanteld
+
+Rechtsboven staat een **2D/3D**-knop.
+
+| | wat je ziet |
+| --- | --- |
+| **plat** | noord boven, geen kanteling, de hele lus in beeld — waar ben ik |
+| **gekanteld** | 58° gekanteld, gedraaid naar de kant waar je loopt, dichterbij, huizen overeind — welk pad neem ik |
+
+In gekantelde stand komen de gebouwen overeind (`fill-extrusion` op
+`render_height` uit het OpenMapTiles-schema, vanaf z15). Ze staan uit zolang de kaart
+plat is: platte vlakken bovenop opgetrokken vlakken is dubbel getekend, en zonder
+kanteling zie je van hoogte toch niets.
+
+De kaart draait mee met de **looprichting uit je opeenvolgende posities**, niet met
+het kompas. Het kompas zegt waar de telefoon heen wijst, en met een telefoon los in
+je hand klapt een op het kompas gedraaide kaart alle kanten op. Bewegingen onder
+6 meter worden genegeerd — anders levert GPS-ruis onder een bladerdek een
+willekeurige richting op terwijl je stilstaat. De richting wordt over de
+eenheidscirkel gemengd, want anders springt 350° → 10° door het zuiden heen.
+
+De keuze blijft bewaard: dit is een voorkeur, geen instelling die je per wandeling
+opnieuw wil kiezen.
+
+### Een herlaadactie kost je wandeling niet meer
+
+Per ongeluk naar beneden trekken herlaadde de app, en dan was alles weg: voortgang,
+gevonden punten, het spoor. Twee dingen daartegen.
+
+**Het gebeurt niet meer zo snel:** `overscroll-behavior: none`, dus geen
+pull-to-refresh.
+
+**En als het toch gebeurt, is het niet erg:** de lopende wandeling staat in
+IndexedDB, na elke stap bijgewerkt (hoogstens elke 4 seconden, en gegarandeerd bij
+`pagehide` en bij het wegschuiven van de app). Sta je nog op `#/onderweg`, dan pakt de
+app hem stil weer op. Open je de app later opnieuw, dan staat er een kaart op het
+beginscherm: *"Je was aan het lopen — Rondje Oranjerie, 2,1 van 5,0 km gedaan"*, met
+**Verder** en een kruisje.
+
+De hele route gaat mee in die opslag, niet alleen een verwijzing: na een herlaadactie
+is de lijst met gevonden rondjes leeg en bestaat een net gegenereerd rondje nergens
+meer. Ouder dan twaalf uur laten we vallen — dat is geen onderbreking meer maar een
+vergeten wandeling.
+
+Het wandelscherm verlaten is wél een besluit: dan wordt de wandeling opgeschreven en
+is er niets meer om te hervatten. Een herlaadactie komt daar nooit langs, en dat is
+precies het geval dat hervat moet worden.
+
+### Terugblik na de wandeling
+
+Is het rondje rond, dan staat er **Bekijk jullie wandeling** in de kaart onderin; het
+kruisje linksboven doet hetzelfde als je eerder stopt. Op de terugblik staat:
+
+- de kaart met **twee lijnen**: lime is wat je van plan was, muntgroen is waar je
+  echt liep — met een legenda, want dat verschil is het interessante
+- kilometers, **geschatte stappen**, en minuten onderweg
+- wat je onderweg hebt afgevinkt
+
+Het spoor wordt tijdens het lopen uitgedund bijgehouden: elke 15 meter een punt is
+genoeg voor de vorm en houdt een wandeling van 6 km op een paar honderd punten. Het
+gaat mee in het boek, dus elke wandeling in **Boek** is aan te tikken en opent zijn
+eigen terugblik.
+
+**Over die stappen.** Er is geen stappenteller in een browser. Het getal is berekend
+uit de afstand en de gemiddelde staplengte bij die leeftijd (ruwweg 0,42 × lengte),
+afgerond op vijftigtallen om niet te doen alsof het gemeten is — en de app zegt dat
+er ook bij. Ook de tijd is eerlijk gelabeld als *min onderweg*: pauzes en stilstaan
+bij een bruggetje zitten erin, want er is geen manier om lopen van kijken te
+onderscheiden.
 
 ## Navigatie
 

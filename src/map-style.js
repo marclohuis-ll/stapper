@@ -19,6 +19,9 @@ const C = {
   water:     '#12363A',
   waterLine: '#1E5A57',
   building:  '#182720',
+  /* Iets lichter dan de platte variant: een opgetrokken vlak dat exact de kleur van
+   * de grond heeft, ziet eruit als een gat in plaats van een huis. */
+  building3d: '#1E3228',
   road:      '#2B4238',
   roadBig:   '#36503F',
   /* Drie soorten paadje, elk herkenbaar. Alle drie lichter dan de wegen, want
@@ -98,6 +101,26 @@ export function darkStyle() {
         id: 'building', type: 'fill', source: 'openmaptiles', 'source-layer': 'building',
         minzoom: 13,
         paint: { 'fill-color': C.building },
+      },
+      /* Dezelfde huizen, maar overeind. Staat uit tot je de kaart kantelt (zie
+       * mapview.setView): platte vlakken bovenop opgetrokken vlakken is dubbel
+       * getekend, en zonder kanteling zie je van de hoogte toch niets.
+       *
+       * `render_height` en `render_min_height` komen uit het OpenMapTiles-schema en
+       * zijn precies bedoeld om dit te kunnen: hoogte in meters, met de onderkant
+       * apart zodat een brug niet vanaf de grond wordt opgetrokken. */
+      {
+        id: 'building-3d', type: 'fill-extrusion', source: 'openmaptiles',
+        'source-layer': 'building', minzoom: 15,
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-extrusion-color': C.building3d,
+          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
+          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+          // Doorschijnend: de route moet belangrijker blijven dan de huizen.
+          'fill-extrusion-opacity': 0.72,
+          'fill-extrusion-vertical-gradient': true,
+        },
       },
 
       /* ── wegen, gedempt: ze zijn oriëntatie, geen hoofdrol ──────────── */

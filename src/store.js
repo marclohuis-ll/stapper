@@ -150,6 +150,19 @@ export const addPhoto = (photo) => tx('photos', 'readwrite', (s) => s.add({
 export const listPhotos = () => tx('photos', 'readonly', (s) => wrap(s.getAll()));
 export const deletePhoto = (id) => tx('photos', 'readwrite', (s) => s.delete(id));
 
+/* ── De wandeling die nu loopt ───────────────────────────────────────────────
+   Eén sleutel in `kv`, na elke stap overschreven. Reden: een per ongeluk naar
+   beneden getrokken pagina herlaadt de app, en dan was je hele wandeling weg —
+   voortgang, gevonden punten, alles. Terwijl je op dat moment in het bos staat.
+
+   De hele route gaat mee, niet alleen een verwijzing: na een herlaadactie is
+   `state.routes` leeg en een net gegenereerd rondje is dan nergens meer te vinden.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+export const getLopend = () => tx('kv', 'readonly', (s) => wrap(s.get('lopend')));
+export const setLopend = (data) => tx('kv', 'readwrite', (s) => s.put(data, 'lopend'));
+export const clearLopend = () => tx('kv', 'readwrite', (s) => s.delete('lopend'));
+
 /* ── Geocaches uit een GPX-bestand ──────────────────────────────────────────
    Jouw eigen selectie, geëxporteerd uit c:geo of als pocket query. Ze staan hier
    en niet achter een API: dan werken ze offline, hoeft er geen sleutel aangevraagd

@@ -745,3 +745,100 @@ browser `sw.js` opnieuw ophaalt. De live site serveert `sw.js` correct
 Nog iets om te weten: **deze ene update landt nog op de oude manier.** De service
 worker die nu op je telefoon staat heeft `skipWaiting()` en neemt het dus meteen
 over. Vanaf de volgénde versie krijg je de knop.
+
+---
+
+# 14. Wat een echte wandeling blootlegde
+
+De app is voor het eerst met een kind buiten gelopen. Vier dingen, en geen ervan was
+uit code te voorspellen.
+
+## De kaart schoot terug naar je eigen voeten
+
+`walk.follow` stond al in de code — op `true` gezet en nooit meer aangeraakt. Elke
+GPS-tik centreerde dus opnieuw, en vooruitkijken op de route was onmogelijk: je
+schoof de kaart weg en een seconde later stond hij weer op je neus.
+
+Het onderscheid dat dit oplost is **`originalEvent`** op de MapLibre-gebeurtenis. Die
+zit erin bij slepen, knijpen of draaien met een vinger, en níet bij onze eigen
+`jumpTo`/`easeTo`. Zonder die controle zet de app het volgen uit op zijn eigen
+bewegingen en volgt hij daarna nooit meer.
+
+Gemeten: na wegslepen bleef het middelpunt over vier simulatietikken exact staan
+(6.72179, 52.26247 → 6.72179, 52.26247), en de terugknop bracht hem in één tik terug.
+
+## Per ongeluk naar beneden trekken kostte de hele wandeling
+
+Pull-to-refresh herlaadt de app, en er stond niets in de opslag: voortgang, gevonden
+punten en het spoor waren weg. Terwijl je op dat moment in een bos staat.
+
+Twee lagen. `overscroll-behavior: none` zodat het niet meer zo makkelijk gebeurt, en
+de lopende wandeling in IndexedDB zodat het niet erg is als het toch gebeurt.
+
+Drie dingen die daarbij bleken te moeten:
+
+- **De hele route moet mee**, niet een verwijzing. Na een herlaadactie is de lijst
+  met gevonden rondjes leeg, en een net gegenereerd rondje bestaat dan nergens meer.
+- **Het zoekvenster van de tracker moet ook hervat worden.** `createTracker` begon
+  altijd op index 0. Zet je de afstand terug op 2,1 km maar het venster op het begin,
+  dan projecteert de eerste meting je op de start en denkt de app dat je opnieuw
+  begint. Nu schuift `lastIndex` mee naar de bewaarde afstand.
+- **Het wandelscherm verlaten is een besluit, een herlaadactie niet.** Verlaten legt
+  de wandeling vast en wist de lopende; een herlaadactie komt daar nooit langs. Zonder
+  dat verschil duikt er later een hervat-kaart op voor een wandeling die al in het
+  boek staat, en tel je hem dubbel.
+
+Gemeten met een echte herlaadactie halverwege: 3242 m bewaard, na herladen ging de
+wandeling verder vanaf 3242 m in plaats van vanaf nul.
+
+## Een gekantelde kaart vraagt om de looprichting, niet om het kompas
+
+De 3D-stand draait de kaart naar de kant waar je heen loopt. Het kompas is daarvoor
+de verkeerde bron: dat zegt waar de *telefoon* heen wijst, en met een telefoon los in
+je hand klapt zo'n kaart alle kanten op. De richting komt daarom uit opeenvolgende
+posities.
+
+Twee dingen die daar misgingen:
+
+- **Onder 6 meter negeren.** GPS-ruis onder een bladerdek levert anders een
+  willekeurige richting op terwijl je stilstaat.
+- **Mengen over de eenheidscirkel.** Gewoon gemiddelde van 350° en 10° is 180° — de
+  kaart klapt dan naar het zuiden. Dus via sin/cos.
+
+De gebouwen komen overeind met `fill-extrusion` op `render_height` uit het
+OpenMapTiles-schema, vanaf z15, en staan uit zolang de kaart plat is: platte vlakken
+bovenop opgetrokken vlakken is dubbel getekend en zonder kanteling zie je van hoogte
+toch niets. Gemeten in Delden: laag zichtbaar, gebouwen getekend, `render_height` 5.
+
+## Een terugblik, en wat daarin nét niet gemeten kan worden
+
+Het gelopen spoor wordt uitgedund bijgehouden — elke 15 meter een punt — en gaat mee
+in het boek. Op de terugblik liggen twee lijnen over elkaar: lime wat je van plan was,
+muntgroen waar je echt liep.
+
+Twee getallen die eerlijk gelabeld moeten worden, want ze zijn niet gemeten:
+
+- **Stappen.** Er is geen stappenteller in een browser. Het getal komt uit de afstand
+  en de gemiddelde staplengte bij die leeftijd (ruwweg 0,42 × lengte), afgerond op
+  vijftigtallen om niet te doen alsof het gemeten is.
+- **Tijd.** Van start tot afsluiten, dus pauzes en stilstaan bij een bruggetje zitten
+  erin. Er stond eerst een afgeleid tempo bij ("± 1 min per kilometer" in een
+  simulatie); dat is weggehaald, want er is geen manier om lopen van kijken te
+  onderscheiden en een tempo dat pauzes meerekent is geen tempo.
+
+## Eén ding dat de test zelf blootlegde
+
+Tijdens het meten liep de simulatie door, waardoor de positie een paar honderd meter
+verder sprong dan het zoekvenster van ±300 m. De tracker projecteerde toen op de rand
+van het venster: *"Je bent 300 m van de route"* terwijl de route recht onder je lag.
+
+Dat is niet alleen een testartefact — een paar minuten zonder fix onder een dicht
+bladerdek doet hetzelfde. Boven 150 meter zoekt de tracker nu één keer de hele lijn af
+om zich te heroriënteren. Duurder, maar alleen op het moment dat je verdwaald bent.
+
+## En een flakkerende probe
+
+`spike/gebaar-probe.js` viel om op "één sleep blijft één stap terug". Niet de app: één
+sleep doet twee routeringen — één als je stilhoudt, één als je lost — en tussen die
+twee staat `bezig` even op false. De probe keek precies in dat gaatje en mat de helft
+van de handeling. Hij wacht nu tot het twee keer achter elkaar rustig is.

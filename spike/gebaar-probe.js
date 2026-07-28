@@ -84,6 +84,21 @@ export async function run() {
   }));
   const wacht = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /**
+   * Wachten tot er echt niets meer loopt.
+   *
+   * Eén sleep kan twee routeringen doen — één als je stilhoudt, één als je lost — en
+   * tussen die twee staat `bezig` even op false. Wie daar in kijkt, meet de helft van
+   * de handeling. Dus: twee keer achter elkaar rustig zien, niet één keer.
+   */
+  async function wachtTotRust(tellen = 2) {
+    let rustig = 0;
+    for (let i = 0; i < 80 && rustig < tellen; i++) {
+      await wacht(150);
+      rustig = laatste() && laatste().bezig === false ? rustig + 1 : 0;
+    }
+  }
+
   async function sleep(van, naar, { stappen = 6, houdVast = 0 } = {}) {
     pointer('pointerdown', van.x, van.y);
     for (let i = 1; i <= stappen; i++) {
@@ -158,9 +173,8 @@ export async function run() {
   pointer('pointerup', doel.x, doel.y);
   ok('kaart mag meteen weer bewegen', paden.pan === true && paden.rotate === true);
 
-  // De echte routering loopt nu; wachten tot hij landt.
-  for (let i = 0; i < 60 && laatste().bezig !== false; i++) await wacht(100);
-  await wacht(200);
+  // De echte routering loopt nu; wachten tot alles gedaan is.
+  await wachtTotRust();
 
   ok('duimlabel is weg na lossen', !duim().classList.contains('duim--aan'));
   ok('elastiek is vervangen door de echte lijn', !band() && soorten().includes('lijn'));
@@ -179,8 +193,7 @@ export async function run() {
   const knoopPx = project(vormpuntVan(laatsteData));
   const doel2 = { x: knoopPx.x - 60, y: knoopPx.y + 50 };
   await sleep(knoopPx, doel2, { stappen: 5, houdVast: 700 });
-  for (let i = 0; i < 60 && laatste().bezig !== false; i++) await wacht(100);
-  await wacht(200);
+  await wachtTotRust();
   ok('vormpunt verplaatst, er is er nog één',
      soorten().filter((s) => s === 'shape').length === 1, soorten().join(','));
   // Stilhouden routeert tussendoor én bij het lossen. Voor jou is dat één
@@ -194,7 +207,7 @@ export async function run() {
   const puntenVoor = laatste().punten;
   pointer('pointerdown', poiPx.x, poiPx.y);
   pointer('pointerup', poiPx.x, poiPx.y);
-  for (let i = 0; i < 60 && laatste().punten === puntenVoor; i++) await wacht(100);
+  for (let i = 0; i < 80 && laatste().punten === puntenVoor; i++) await wacht(150);
   ok('punt eruit', laatste().punten === puntenVoor - 1,
      `${puntenVoor} → ${laatste().punten}`);
   ok('en het zegt het', meldingen.some((m) => m.includes('Punt 2')), meldingen.join(' | '));
