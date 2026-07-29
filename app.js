@@ -156,6 +156,9 @@ const state = {
   /* De wandeling die op de terugblik staat. */
   recap: null,
 
+  /* De aangetikte geocache op de kaart, of null. */
+  cacheKaart: null,
+
   /* Op het beginscherm zetten. `installer` is het beforeinstallprompt-event dat
    * Chrome ons geeft; dat mag je maar één keer gebruiken, dus we bewaren het. */
   installer: null,
@@ -183,11 +186,10 @@ const walk = {
   follow: true,
   stopKaartKijk: null,
 
-  /* Richting waarin je loopt, uit de opeenvolgende posities. Niet het kompas: dat
-   * zegt waar de telefoon heen wijst, niet waar jij heen loopt — en op een
-   * gekantelde kaart is dat laatste wat je boven wil hebben. */
+  /* Richting waarin je loopt. Komt uit de routerichting zolang je die volgt, en
+   * anders uit je eigen beweging over 20 meter — zie bepaalKoers(). Niet uit het
+   * kompas: dat zegt waar de telefoon heen wijst, niet waar jij heen loopt. */
   koers: null,
-  vorigePunt: null,
 
   /* Het echt gelopen spoor, uitgedund, voor de terugblik. */
   trail: [],
@@ -955,6 +957,8 @@ views.detail = () => {
       </div>
     </div>
 
+    ${cacheKaartje('detail')}
+
     <div class="screen__footer">
       ${(() => {
         const opgeslagen = state.saved.some((x) => x.naam === r.naam);
@@ -1197,6 +1201,8 @@ views.onderweg = () => {
           </div>
         </div>
       </div>
+
+      ${cacheKaartje('onderweg')}
 
       <div class="nextcard-wrap">
         <div class="nextcard">
@@ -1767,11 +1773,69 @@ async function mountMap() {
     koers: onderweg ? walk.koers : null,
   });
 
+  koppelCaches();
+
   if (!onderweg) return;
   // Alleen centreren als het volgen aan staat: kom je terug uit de kindmodus nadat
   // je de kaart hebt weggeschoven, dan hoort hij te blijven staan waar je hem liet.
   if (walk.follow && state.position) mapview.volg(state.position, walk.koers);
   koppelKaartKijk();
+}
+
+/* ── Geocaches op de kaart ────────────────────────────────────────────────────
+   De caches uit je GPX-bestand stonden alleen in de generator: zaten ze niet in je
+   route, dan wist je niet dat je er langs liep. Nu staan ze erop — als terzijde, hol
+   en muntgroen, zodat ze niet te verwarren zijn met je routepunten.
+
+   Alleen wat in beeld is. Een pocket query kan honderden caches bevatten, en die
+   allemaal tekenen maakt de kaart onleesbaar terwijl je toch alleen ziet wat op het
+   scherm staat.
+   ───────────────────────────────────────────────────────────────────────────── */
+let losCaches = null;
+
+function koppelCaches() {
+  if (losCaches) { losCaches(); losCaches = null; }
+
+  /* Alleen waar het je helpt. Niet op *bewerken*, want daar sleep je de lijn en zijn
+   * extra stippen ruis die je per ongeluk aantikt. Niet in de kindmodus, die is met
+   * opzet leeg. Niet op de terugblik, die gaat over wat je gelópen hebt. */
+  const hier = state.screen === 'detail' || state.screen === 'onderweg';
+  if (!hier || !state.caches.length) { mapview.paintCaches([]); return; }
+
+  const inDeRoute = new Set((currentRoute()?.pois || [])
+    .filter((p) => p.category === 'cache').map((p) => p.naam));
+
+  const bijwerken = () => {
+    // De caches die al een punt van je route zijn, staan er al als lime ring.
+    const kandidaten = state.caches.filter((c) => !inDeRoute.has(c.naam));
+    mapview.paintCaches(mapview.cachesInBeeld(kandidaten));
+  };
+
+  bijwerken();
+  const losBeeld = mapview.onBeeldWissel(bijwerken);
+  const losTap = mapview.onCacheTap((props) => {
+    state.cacheKaart = { naam: props.naam, url: props.url || null, code: props.code || null };
+    render();
+  });
+  losCaches = () => { losBeeld(); losTap(); };
+}
+
+/** Het kaartje dat verschijnt als je een cache aantikt. Geen nieuw tabblad opengooien
+ *  onder je duim: eerst zien wát je hebt aangetikt, dan zelf beslissen. */
+function cacheKaartje(plek) {
+  const c = state.cacheKaart;
+  if (!c) return '';
+  return `
+  <div class="cachetip cachetip--${plek}">
+    <span class="cachetip__ico">${ico('travel_explore')}</span>
+    <span class="cachetip__text">
+      <span class="cachetip__naam">${esc(c.naam)}</span>
+      <span class="cachetip__sub">geocache uit je eigen bestand${c.code ? ` · ${esc(c.code)}` : ''}</span>
+    </span>
+    ${c.url ? `<a class="cachetip__doe" href="${esc(c.url)}" target="_blank"
+                  rel="noopener noreferrer">Hint</a>` : ''}
+    <button class="cachetip__weg" data-act="cachetip-weg" aria-label="Sluiten">${ico('close')}</button>
+  </div>`;
 }
 
 /**
@@ -1840,7 +1904,6 @@ function startWalk() {
   walk.override = false;
   walk.follow = true;
   walk.koers = null;
-  walk.vorigePunt = null;
   walk.trail = hervat && Array.isArray(hervat.trail) ? hervat.trail.slice() : [];
   walk.startedAt = (hervat && hervat.startedAt) || Date.now();
   walk.bewaardOp = 0;
@@ -1858,10 +1921,12 @@ function hervatVolgen() {
   startVloeiend();
 
   const onMove = (p) => {
-    volgKoers(p);
     volgSpoor(p);
     state.position = p;
     walk.progress = walk.tracker.update(p);
+    // Ná de tracker: de koers komt bij voorkeur uit de routerichting, en die weet de
+    // tracker pas als hij je positie op de lijn geprojecteerd heeft.
+    bepaalKoers(p, walk.progress);
 
     /* De stip en de kaart krijgen niet deze meting maar een doel om naartoe te
      * kruipen. Eén sprong per seconde is wat "hakkelig" is; het tekenen gebeurt
@@ -1920,7 +1985,7 @@ function stopWalk({ vastleggen = true } = {}) {
   Object.assign(walk, {
     tracker: null, progress: null, heading: null, sticker: null,
     nudge: '', override: false, stopWatch: null, stopCompass: null,
-    stopKaartKijk: null, koers: null, vorigePunt: null, trail: [],
+    stopKaartKijk: null, koers: null, trail: [],
     startedAt: null, bewaardOp: 0, klaarGemeld: false, vloeiend: null,
   });
   return vast;
@@ -1948,33 +2013,53 @@ function startVloeiend() {
 
 /* ── Waar je heen loopt, en waar je geweest bent ────────────────────────────── */
 
+/* Hoeveel de richting mag afwijken voordat de kaart meedraait. Zonder deze dode zone
+ * draait hij continu een paar graden heen en weer, en dát is wat onrustig aanvoelt —
+ * niet de grote bochten. */
+const DODE_ZONE_GRADEN = 8;
+
+/* Over hoeveel meter de peiling gaat als we hem uit je eigen beweging moeten halen. */
+const BASISLIJN_M = 20;
+
 /**
- * Looprichting uit opeenvolgende posities, gladgestreken.
+ * Welke kant je op loopt.
  *
- * Níet het kompas: dat zegt waar de telefoon heen wijst. Met een telefoon los in je
- * hand of scheef in je zak klapt een op het kompas gedraaide kaart alle kanten op.
- * Waar je heen *loopt* is stabieler, en dat is ook wat je boven wil hebben.
+ * Níet het kompas: dat zegt waar de telefoon heen wijst, en met een telefoon los in je
+ * hand klapt een op het kompas gedraaide kaart alle kanten op.
  *
- * Onder 6 meter negeren we de beweging: GPS-ruis onder een bladerdek zou anders een
- * willekeurige richting opleveren terwijl je stilstaat.
+ * Maar ook niet meer de peiling tussen twee GPS-metingen. Die is te onrustig om op te
+ * draaien, en dat is geen kwestie van harder dempen: bij een fout van 10 m over 6 m
+ * beweging zit de richting er al meer dan 50° naast. Zwaarder dempen maakt de kaart dan
+ * traag én blijft onrustig.
+ *
+ * Dus: de richting van de róute, zolang je hem volgt. Die lijn beweegt niet, dus die
+ * richting is rustig — en zolang je erop loopt is het precies waar je heen gaat. Ben je
+ * er echt van af, dan valt hij terug op je eigen beweging, maar dan over 20 meter in
+ * plaats van over twee metingen.
  */
-function volgKoers(p) {
+function bepaalKoers(p, pr) {
   const nu = [p.lon, p.lat];
-  const vorig = walk.vorigePunt;
-  if (!vorig) { walk.vorigePunt = nu; return; }
-  if (distM(vorig, nu) < 6) return;
+  let nieuw = null;
 
-  const nieuw = bearing(vorig, nu);
-  walk.vorigePunt = nu;
+  if (pr && pr.koersOpRoute != null && pr.offRouteM <= OP_DE_LIJN_M) {
+    nieuw = pr.koersOpRoute;
+  } else {
+    // Terug in het spoor tot we ver genoeg weg zijn. Het spoor is per 15 m uitgedund,
+    // dus dit zijn hoogstens een paar stappen terug.
+    for (let i = walk.trail.length - 1; i >= 0; i--) {
+      if (distM(walk.trail[i], nu) >= BASISLIJN_M) { nieuw = bearing(walk.trail[i], nu); break; }
+    }
+  }
+  if (nieuw == null) return;
+
   if (walk.koers == null) { walk.koers = nieuw; return; }
-
-  // Over de eenheidscirkel mengen, anders springt 350° → 10° door 180 heen.
-  const w = 0.35;
-  const r = Math.PI / 180;
-  const x = Math.cos(walk.koers * r) * (1 - w) + Math.cos(nieuw * r) * w;
-  const y = Math.sin(walk.koers * r) * (1 - w) + Math.sin(nieuw * r) * w;
-  walk.koers = (Math.atan2(y, x) / r + 360) % 360;
+  // Alleen bijstellen als het echt een andere kant op is. De demper in
+  // src/vloeiend.js maakt van elke stap alsnog een vloeiende draai.
+  if (Math.abs(hoekVerschil(walk.koers, nieuw)) > DODE_ZONE_GRADEN) walk.koers = nieuw;
 }
+
+/** Verschil tussen twee richtingen, −180..180. */
+const hoekVerschil = (a, b) => ((b - a + 540) % 360) - 180;
 
 /** Het spoor uitgedund bijhouden: elke 15 meter een punt is genoeg om de vorm te
  *  bewaren, en houdt een wandeling van 6 km op een paar honderd punten. */
@@ -2641,6 +2726,7 @@ function enter(screen) {
   state.showSticker = false;
   state.showLock = false;
   state.code = '';
+  state.cacheKaart = null;      // hoort bij één kaart, niet bij de hele app
 
   // Tracking loopt over *onderweg* en *kindmodus* heen: tussen die twee wisselen
   // mag de wandeling niet opnieuw beginnen.
@@ -2874,6 +2960,7 @@ app.addEventListener('click', (e) => {
     /* ── onderweg: de kaart ── */
     case 'aanzicht':  wisselAanzicht(); break;
     case 'volg-mij':  volgWeer(); break;
+    case 'cachetip-weg': state.cacheKaart = null; render(); break;
 
     /* ── de wandeling afsluiten en terugblikken ── */
     case 'stop-wandeling': sluitWandeling(); break;

@@ -12,6 +12,7 @@ import { darkStyle, MAP_COLOURS } from './map-style.js';
 
 const SRC = 'stapper-route';
 const MIJ = 'stapper-mij';
+const CACHES = 'stapper-caches';
 const PIJL = 'mij-pijl-icoon';
 
 let map = null;
@@ -81,6 +82,35 @@ function ensure(maplibregl) {
       },
       paint: { 'text-color': '#EAF3EA', 'text-halo-color': '#0A1512', 'text-halo-width': 2 },
     });
+    /* De geocaches uit je GPX-bestand die níet in deze route zitten. Onder de eigen
+     * positie en onder de routepunten, want ze zijn een terzijde: leuk als je er
+     * toevallig langs loopt, maar niet waar de route om gaat.
+     *
+     * Muntgroen en hol, zodat ze niet te verwarren zijn met de gevulde lime ringen van
+     * je routepunten — anders lijkt je route langer dan hij is. */
+    map.addSource(CACHES, { type: 'geojson', data: empty() });
+    map.addLayer({
+      id: 'cache-stip', type: 'circle', source: CACHES,
+      minzoom: 13,
+      paint: {
+        'circle-radius': 5.5, 'circle-color': '#0A1512',
+        'circle-stroke-color': MAP_COLOURS.mint || '#6FE3D0', 'circle-stroke-width': 2.5,
+      },
+    });
+    map.addLayer({
+      id: 'cache-naam', type: 'symbol', source: CACHES,
+      minzoom: 15,
+      layout: {
+        'text-field': ['get', 'naam'], 'text-font': ['Noto Sans Regular'],
+        'text-size': 10.5, 'text-offset': [0, 1.2], 'text-anchor': 'top',
+        'text-max-width': 8, 'text-optional': true,
+      },
+      paint: {
+        'text-color': MAP_COLOURS.mint || '#6FE3D0',
+        'text-halo-color': '#0A1512', 'text-halo-width': 2,
+      },
+    });
+
     /* Waar jij bent staat in een éigen bron. Dat is geen ordening maar snelheid:
      * de stip wordt 60 keer per seconde bijgewerkt (zie src/vloeiend.js), en zat
      * hij in dezelfde bron als de route, dan zou elke frame een lijn van
@@ -174,6 +204,76 @@ function pijlAfbeelding(ratio = 2) {
   g.fill();
 
   return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+}
+
+/**
+ * De geocaches die in beeld zijn en niet in de route zitten.
+ *
+ * Alleen wat in het kaartvenster past. Een pocket query kan honderden caches bevatten
+ * en die allemaal in de bron zetten maakt de kaart onleesbaar én het tekenen traag —
+ * terwijl je toch alleen ziet wat op het scherm staat.
+ */
+export function paintCaches(caches) {
+  if (!map || !map.getSource(CACHES)) return;
+  if (!caches || !caches.length) { map.getSource(CACHES).setData(empty()); return; }
+
+  map.getSource(CACHES).setData({
+    type: 'FeatureCollection',
+    features: caches.map((c) => ({
+      type: 'Feature',
+      properties: { code: c.code || '', naam: c.naam || 'Geocache', url: c.url || '' },
+      geometry: { type: 'Point', coordinates: c.coord },
+    })),
+  });
+}
+
+/**
+ * Welke caches vallen binnen een kaartbeeld? Met een marge, zodat ze er al staan
+ * voordat ze in beeld schuiven.
+ *
+ * De grenzen komen als gewone getallen binnen en niet uit de kaart. Zo is dit na te
+ * rekenen zonder MapLibre — en dat moet, want een kaart heeft frames nodig om te
+ * bestaan en die zijn er niet altijd.
+ *
+ * @param {Array} caches
+ * @param {{west:number, oost:number, zuid:number, noord:number}} grenzen
+ */
+export function filterOpVenster(caches, grenzen, marge = 0.25) {
+  if (!caches || !caches.length || !grenzen) return [];
+  const { west, oost, zuid, noord } = grenzen;
+  const dLon = (oost - west) * marge;
+  const dLat = (noord - zuid) * marge;
+  return caches.filter(({ coord }) =>
+    coord[0] >= west - dLon && coord[0] <= oost + dLon &&
+    coord[1] >= zuid - dLat && coord[1] <= noord + dLat);
+}
+
+/** Hetzelfde filter, maar met de grenzen van de kaart zoals hij nu staat. */
+export function cachesInBeeld(caches, marge = 0.25) {
+  if (!map || !caches || !caches.length) return [];
+  const b = map.getBounds();
+  return filterOpVenster(caches, {
+    west: b.getWest(), oost: b.getEast(), zuid: b.getSouth(), noord: b.getNorth(),
+  }, marge);
+}
+
+/** Aangetikt op een cache? Geeft de eigenschappen terug, of niets. */
+export function onCacheTap(cb) {
+  if (!map) return () => {};
+  const h = (e) => {
+    const f = e.features && e.features[0];
+    if (f) cb(f.properties, f.geometry.coordinates);
+  };
+  map.on('click', 'cache-stip', h);
+  return () => map.off('click', 'cache-stip', h);
+}
+
+/** Laat de kaart weten wanneer het beeld verschoven is, zodat de caches bijgewerkt
+ *  kunnen worden zonder ze alle honderden in de bron te houden. */
+export function onBeeldWissel(cb) {
+  if (!map) return () => {};
+  map.on('moveend', cb);
+  return () => map.off('moveend', cb);
 }
 
 /**

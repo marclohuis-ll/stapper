@@ -12,13 +12,58 @@
    bladerdek: één wilde meting zet je niet 2 km terug.
    ============================================================================ */
 
-import { distM } from './geo.js';
+import { distM, bearing } from './geo.js';
 
 const WINDOW_M = 300;        // hoe ver vooruit en achteruit we zoeken
 const ARRIVE_BASE = 40;      // basisdrempel voor "je bent er" (meter)
 const ARRIVE_MAX = 90;
 const PASSED_OFFLINE_M = 60; // tot hoe ver van de lijn "erlangs gelopen" nog geldt
 const REACQUIRE_M = 150;     // hierboven zoeken we de hele lijn opnieuw af
+
+/* Over hoeveel meter de richting van de route bepaald wordt.
+ *
+ * Niet over één segment: die zijn soms drie meter lang en dan is de "richting van de
+ * route" net zo wisselend als een peiling uit twee GPS-metingen. Over 25 meter zijn de
+ * bochten van het pad zelf uitgevlakt en houd je de richting waar het heen gaat. */
+const TANGENT_M = 25;
+
+/**
+ * Het punt op de lijn dat `along` meter vanaf het begin ligt.
+ *
+ * Nodig om de richting van de route te kunnen bepalen op de plek waar je bent, en niet
+ * alleen op een hoekpunt.
+ */
+function puntOp(coords, cum, along) {
+  const doel = Math.max(0, Math.min(cum[cum.length - 1], along));
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < doel) i++;
+  const span = cum[i] - cum[i - 1];
+  const t = span === 0 ? 0 : (doel - cum[i - 1]) / span;
+  const a = coords[i - 1], b = coords[i];
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+/**
+ * Welke kant de route op gaat, op `along` meter langs de lijn.
+ *
+ * Dit is een véél stabielere richting dan de peiling tussen twee GPS-metingen: de
+ * lijn beweegt niet. Zolang je de route volgt is dit ook precies de kant waar je heen
+ * loopt — en dat is wat je boven wil hebben op een gekantelde kaart.
+ *
+ * Aan het einde van de route is er niets meer vooruit; dan de laatste 25 meter
+ * achteruit nemen, wat op dezelfde richting uitkomt.
+ */
+function routeKoers(coords, cum, along) {
+  const totaal = cum[cum.length - 1];
+  if (!(totaal > 0)) return null;
+
+  const vooruit = along + TANGENT_M <= totaal;
+  const van = vooruit ? along : Math.max(0, totaal - TANGENT_M);
+  const tot = vooruit ? along + TANGENT_M : totaal;
+  const a = puntOp(coords, cum, van);
+  const b = puntOp(coords, cum, tot);
+  return distM(a, b) < 1 ? null : bearing(a, b);
+}
 
 /** Cumulatieve afstand per punt van de lijn. */
 function cumulative(coords) {
@@ -164,6 +209,8 @@ export function createTracker(route, hervat = null) {
         percent: total ? Math.min(100, Math.round(walked / total * 100)) : 0,
         offRouteM: offRoute,
         snapped: best.snapped,
+        // De richting van de route hier. Zie routeKoers(): de stabiele koersbron.
+        koersOpRoute: routeKoers(coords, cum, walked),
         next,
         nextDistanceM: next ? distM(p, next.coord) : null,
         nextAlongM: next ? Math.max(0, next.along - walked) : null,

@@ -958,3 +958,99 @@ Nagemeten op alle vier de tabs plus *instellen* en *welkom*: `scrollHeight` geli
 `window.scrollTo(0, 800)` staat `scrollY` nog op 0 en is de balk niet verschoven.
 Scrollen bínnen de app werkt onveranderd — het profiel is 979 px hoog in een venster
 van 812 en scrollt netjes onder de balk door.
+
+---
+
+# 17. Drie punten uit de tweede wandeling
+
+## De kaart draaide 20.000 graden te veel
+
+`spike/koers-probe.mjs` maakt onrust meetbaar: tel op hoeveel graden de kaart in totaal
+draait over één wandeling. Loopt de route 2200 graden aan bochten, dan is 2200 het
+minimum en is al het meerdere gewiebel.
+
+Gesimuleerde wandeling over een echte BRouter-route van 3,77 km, 2897 metingen op
+wandeltempo met een zijwaartse GPS-fout tot ±10 m:
+
+| koersbron | totaal gedraaid | waarvan gewiebel |
+| --- | --- | --- |
+| peiling tussen twee metingen | 21.584° | 19.384° |
+| **richting van de route + dode zone** | **2.217°** | **17°** |
+
+Factor 9,7 rustiger, en de bochten worden nog steeds gemaakt (2217 tegen 2200 aan
+echte bochten). Bij alle 2897 metingen kon de positie op de lijn geprojecteerd worden.
+
+**Waarom harder dempen niet de oplossing was.** De richtingsfout van een peiling is
+ruwweg `atan(fout / afstand)`. Bij 10 m GPS-fout over 6 m beweging zit je al boven de
+50°. Dat is geen ruis die je wegfiltert; dat is een bron die niet weet waar je heen
+loopt. Zwaarder dempen maakt de kaart traag én laat hem onrustig.
+
+**Wat er in plaats daarvan gebruikt wordt.** De tracker projecteert je positie al op de
+routelijn. De *richting van die lijn* op die plek is een stabiele peiling — de lijn
+beweegt niet — en zolang je de route volgt is het precies waar je heen gaat. Drie details
+die nodig bleken:
+
+- **Over 25 meter, niet over één segment.** Segmenten zijn soms drie meter lang; de
+  "richting van de route" is dan net zo wisselend als een GPS-peiling.
+- **Een dode zone van 8°.** Zonder die draait de kaart continu een paar graden heen en
+  weer, en dát voelt onrustig — niet de grote bochten. De demper in `vloeiend.js` maakt
+  van elke stap alsnog een vloeiende draai.
+- **Terugval op eigen beweging** boven 25 m van de route, maar dan over een basislijn
+  van 20 meter uit het gelopen spoor in plaats van tussen twee metingen. Gemeten op een
+  zijpad van 150 m: 25 van de 25 metingen leverden een richting op.
+
+## Welke schermen buiten beeld vallen: geen, op de gemeten formaten
+
+`spike/hoogte-probe.js` zet elk van de veertien schermen neer op vier vensterformaten en
+zoekt elementen die onder de onderkant uitkomen zonder dat er een scrollcontainer is die
+je erbij kan brengen. Dat is de definitie van afgesneden, want `.screen` heeft
+`overflow: hidden` en waarschuwt dus nergens.
+
+Uitkomst op 412×906 (als app), 412×780 (Chrome), 412×720 en 360×640: **alles past.**
+Het gerapporteerde probleem is hiermee niet gereproduceerd.
+
+Twee dingen die de probe wél opleverde:
+
+- **Eén valse positief die iets leert.** De sierlijke blob in de kindmodus valt 70 px
+  buiten beeld — met opzet, want `.kind` heeft `overflow: hidden`. De probe kijkt nu of
+  er tussen het element en het scherm een container zit die zélf afsnijdt; is dat zo, dan
+  is het vormgeving en geen fout.
+- **De kindmodus moest scrollen op korte schermen.** Compas 280 px, naald 186 px en
+  afstand 104 px zijn vaste maten die onder 720 px hoogte samen niet passen, en dan stond
+  "ik zie het!" onder de rand. Een kind hoort daar niet naartoe te scrollen. Alles schaalt
+  nu mee met de beschikbare hoogte, met de ontworpen maat als bovengrens: op 906 nog exact
+  280 px, op 640 krimpt het naar 198 px en past het (inhoud 640 in 640).
+
+Niet met containereenheden, wat de eerste poging was: `container-type: size` snijdt de
+inhoud af waar de hoogte van `.kind` juist uit moet komen, en dan valt alles op nul terug
+— gemeten, compas 0 px.
+
+**Wat nog niet uitgesloten is.** De probe bootst de vensterhoogte na en kan drie dingen
+niet nadoen: de veilige zones van het toestel (`env(safe-area-inset-*)`), een
+uitschuivend toetsenbord, en de tekstvergroting uit de Android-instellingen. Die laatste
+is de sterkste kandidaat: Chrome schaalt daarmee ook px-tekst, en dan groeit alles binnen
+vaste vakken. Één schermafdruk van een scherm dat bij hem misgaat maakt het verschil.
+
+## Geocaches op de kaart
+
+De caches uit het GPX-bestand stonden alleen in de generator. Zaten ze niet in je route,
+dan wist je niet dat je er langs liep. Nu staan ze op de kaart van *detail* en *onderweg*
+als holle muntgroene stippen vanaf z13, met hun naam vanaf z15.
+
+Vier keuzes, met de reden:
+
+- **Hol en muntgroen**, tegenover de gevulde lime ringen van je routepunten. Zonder dat
+  onderscheid lijkt je route langer dan hij is.
+- **Alleen wat in beeld is**, met een marge van een kwart beeld zodat ze er al staan
+  voordat ze in beeld schuiven. `spike/cachekaart-probe.mjs`: van 800 caches over de
+  provincie blijven er 2 over, in 0,04 ms — en dat gebeurt bij elke kaartbeweging.
+- **Niet op *bewerken***, want daar sleep je de lijn en zijn extra stippen iets dat je per
+  ongeluk aantikt. Niet in de kindmodus, die is met opzet leeg. Niet op de terugblik, die
+  gaat over wat je gelopen hebt.
+- **Aantikken geeft een kaartje, geen nieuw tabblad.** Eerst zien wát je aangetikt hebt,
+  dan zelf beslissen of je de hint opent. Een tabblad dat onder je duim opengaat terwijl
+  je loopt is geen antwoord op een vraag.
+
+Het filter is losgeknoopt van de kaart (`filterOpVenster()` neemt vier getallen) zodat het
+na te rekenen is zonder MapLibre. Het tékenen en het aantikken zijn dat niet: die vragen
+een kaart, en een kaart vraagt frames.

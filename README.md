@@ -307,6 +307,60 @@ donker schijfje, want lime op een lime routelijn verdwijnt. Weet de app de richt
 — je staat stil, of er is nog te weinig beweging gemeten — dan is het weer een ronde
 stip: een pijl die een richting verzint is erger dan geen pijl.
 
+### Rustig meedraaien
+
+De kaart draait in de gekantelde stand mee met je looprichting, en die richting komt uit
+de **route** en niet uit je GPS-peiling. Dat verschil is groot: de richtingsfout van een
+peiling is ruwweg `atan(fout / afstand)`, dus bij 10 m GPS-fout over 6 m beweging zit je
+al boven de 50°. Dat is geen ruis die je wegfiltert — dat is een bron die niet weet waar
+je heen loopt.
+
+De tracker projecteert je positie al op de routelijn. De richting van die lijn is stabiel
+(de lijn beweegt niet) en zolang je de route volgt is het precies waar je heen gaat.
+Gemeten over een gesimuleerde wandeling van 3,77 km met ±10 m GPS-ruis
+(`node spike/koers-probe.mjs`):
+
+| koersbron | totaal gedraaid | waarvan gewiebel |
+| --- | --- | --- |
+| peiling tussen twee metingen | 21.584° | 19.384° |
+| **richting van de route + dode zone** | **2.217°** | **17°** |
+
+De route zelf draait 2200° aan bochten; dat is de ondergrens. Factor 9,7 rustiger, en de
+bochten worden nog steeds gemaakt.
+
+Drie details die nodig bleken: de richting over **25 meter** nemen en niet over één
+segment (die zijn soms drie meter lang), een **dode zone van 8°** zodat de kaart niet
+continu een paar graden heen en weer draait, en boven 25 m van de route **terugvallen op
+je eigen beweging** — maar dan over een basislijn van 20 meter uit het gelopen spoor.
+
+### Elk scherm past
+
+`spike/hoogte-probe.js` zet alle veertien schermen neer op vier vensterformaten en zoekt
+elementen die onder de onderkant uitkomen zonder scrollcontainer die je erbij kan brengen.
+Dat is de definitie van afgesneden, want `.screen` heeft `overflow: hidden` en waarschuwt
+nergens.
+
+De kindmodus moest scrollen op korte schermen: compas 280 px, naald 186 px en afstand
+104 px zijn vaste maten die onder 720 px hoogte samen niet passen, en dan stond "ik zie
+het!" onder de rand. Een kind hoort daar niet naartoe te scrollen. Alles schaalt nu mee met
+de beschikbare hoogte, met de ontworpen maat als bovengrens: op 906 nog exact 280 px, op
+640 krimpt het naar 198 px en past het.
+
+### Geocaches op de kaart
+
+De caches uit je GPX-bestand staan op de kaart van *detail* en *onderweg*: holle
+muntgroene stippen vanaf z14, met hun naam vanaf z15. Loop je er toevallig langs, dan zie
+je het.
+
+- **Hol en muntgroen**, tegenover de gevulde lime ringen van je routepunten — anders lijkt
+  je route langer dan hij is.
+- **Alleen wat in beeld is**, met een marge van een kwart beeld. Van 800 caches over een
+  provincie blijven er twee over, in 0,04 ms (`node spike/cachekaart-probe.mjs`).
+- **Niet op *bewerken***, want daar sleep je de lijn en zijn extra stippen iets dat je per
+  ongeluk aantikt. Niet in de kindmodus, die is met opzet leeg.
+- **Aantikken geeft een kaartje met de naam en een knop naar de hint**, geen tabblad dat
+  onder je duim opengaat terwijl je loopt.
+
 ### Een herlaadactie kost je wandeling niet meer
 
 Per ongeluk naar beneden trekken herlaadde de app, en dan was alles weg: voortgang,
@@ -618,10 +672,6 @@ aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
 **voorlezen** spreekt de afstand en het volgende punt uit via `speechSynthesis`.
 
 ## Nog te doen
-
-Drie punten uit de laatste wandeling staan uitgewerkt in
-[VOLGENDE-SESSIE.md](VOLGENDE-SESSIE.md): de kaart rustiger laten meedraaien, schermen
-die op een OnePlus 13R buiten beeld vallen, en de ingeladen geocaches op de kaart zetten.
 
 - **Het sleepgebaar is niet met een echte vinger getest.** Het model is nagerekend
   tegen de echte router (40 controles) en het gebaar tegen een nepkaart (33

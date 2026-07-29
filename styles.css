@@ -746,11 +746,25 @@ html, body { overscroll-behavior: none; }
 .kind__lock .ms { font-size: 18px; }
 .kind__lock-label { font-family: var(--f-kid); font-weight: 500; font-size: 14px; }
 
+/* ── De kindmodus moet altijd in één beeld passen ────────────────────────────
+   Een kind hoort niet te scrollen om bij "ik zie het!" te komen. Maar het compas
+   was 280 px, de naald 186 px en de afstand 104 px — vaste maten die op een korter
+   scherm samen niet passen, en dan moest je scrollen.
+
+   Alles hieronder schaalt daarom mee met de hóogte die er is, met de ontworpen maat
+   als bovengrens: op een lang toestel ziet het uit zoals bedoeld, op een kort toestel
+   krimpt het in plaats van weg te vallen.
+
+   Met `dvh` en niet met containereenheden: `container-type: size` snijdt de inhoud af
+   waar de hoogte van .kind juist uit moet komen, en dan valt alles op nul terug
+   (gemeten). De px-waarde staat telkens eerst, als terugval zonder dvh.
+   ───────────────────────────────────────────────────────────────────────────── */
 .kind__main {
-  position: relative; flex: 1;
+  position: relative; flex: 1; min-height: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 .kind__compass { position: relative; width: 280px; height: 280px; display: grid; place-items: center; }
+.kind__compass { width: min(280px, 31dvh); height: min(280px, 31dvh); }
 .kind__compass::before {
   content: ''; position: absolute; inset: 0; border-radius: 999px; background: rgba(255,255,255,.45);
 }
@@ -769,15 +783,19 @@ html, body { overscroll-behavior: none; }
   position: relative; font-size: 186px; color: var(--ink);
   animation: float 2.8s ease-in-out infinite;
 }
+.kind__needle { font-size: min(186px, 21dvh); }
 .kind__dist {
   font-family: var(--f-kid); font-weight: 700; font-size: 104px;
   line-height: .86; margin-top: 14px;
 }
+.kind__dist { font-size: min(104px, 12dvh); }
 .kind__dist small { font-size: 42px; }
+.kind__dist small { font-size: min(42px, 5.5dvh); }
 .kind__goal {
   font-family: var(--f-kid); font-weight: 600; font-size: 26px;
   opacity: .75; margin-top: 8px; text-align: center;
 }
+.kind__goal { font-size: min(26px, 3.2dvh); }
 /* Feedback als "ik zie het!" te vroeg komt. Vaste hoogte, zodat de layout niet
    opspringt als de regel verschijnt. */
 .kind__nudge {
@@ -1274,6 +1292,47 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 /* De volgknop is er alleen als de kaart je níet meer volgt, en is dan het antwoord
    op "waar was ik?" — dus lime, niet grijs. */
 .kaartknop--volg { border-color: rgba(201,242,110,.34); color: var(--lime); }
+
+/* ── EEN AANGETIKTE GEOCACHE ─────────────────────────────────────────────────
+   Verschijnt boven de vaste bediening, niet eroverheen: je wilde iets weten, niet
+   je knoppen kwijt. Muntgroen, zoals de stippen op de kaart.
+   ───────────────────────────────────────────────────────────────────────────── */
+.cachetip {
+  position: absolute; z-index: 6; left: 14px; right: 14px;
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 13px; border-radius: 22px;
+  background: rgba(10,21,18,.92); border: 1px solid rgba(111,227,208,.34);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  animation: riseIn .22s var(--ease) both;
+}
+/* Twee plekken, want de bediening onderin verschilt per scherm. */
+.cachetip--onderweg { bottom: calc(196px + env(safe-area-inset-bottom)); }
+.cachetip--detail   { bottom: calc(104px + env(safe-area-inset-bottom)); }
+
+.cachetip__ico {
+  width: 38px; height: 38px; border-radius: 13px; flex: none;
+  background: rgba(111,227,208,.15); display: grid; place-items: center;
+}
+.cachetip__ico .ms { font-size: 20px; color: var(--mint); }
+.cachetip__text { flex: 1; min-width: 0; }
+.cachetip__naam {
+  display: block; font-family: var(--f-display); font-weight: 700; font-size: 14.5px;
+  color: var(--text-bright);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cachetip__sub { display: block; font-size: 11.5px; color: var(--text-66); margin-top: 2px; }
+.cachetip__doe {
+  flex: none; height: 36px; padding: 0 15px; border-radius: 999px;
+  background: var(--mint); color: var(--ink); text-decoration: none;
+  font-family: var(--f-display); font-size: 13.5px; font-weight: 700;
+  display: inline-flex; align-items: center;
+}
+.cachetip__weg {
+  flex: none; width: 28px; height: 28px; border: 0; border-radius: 999px;
+  background: transparent; cursor: pointer; display: grid; place-items: center;
+}
+.cachetip__weg .ms { font-size: 16px; color: var(--text-40); }
 
 /* ── EEN ONDERBROKEN WANDELING ──────────────────────────────────────────────── */
 .hervat {
