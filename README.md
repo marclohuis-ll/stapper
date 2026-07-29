@@ -618,6 +618,11 @@ aanwijzing die bij het volgende punt past ("zoek een brug over het water"),
 **voorlezen** spreekt de afstand en het volgende punt uit via `speechSynthesis`.
 
 ## Nog te doen
+
+Drie punten uit de laatste wandeling staan uitgewerkt in
+[VOLGENDE-SESSIE.md](VOLGENDE-SESSIE.md): de kaart rustiger laten meedraaien, schermen
+die op een OnePlus 13R buiten beeld vallen, en de ingeladen geocaches op de kaart zetten.
+
 - **Het sleepgebaar is niet met een echte vinger getest.** Het model is nagerekend
   tegen de echte router (40 controles) en het gebaar tegen een nepkaart (33
   controles), maar of de lijn lekker aanvoelt, of 250 ms het juiste moment is om
