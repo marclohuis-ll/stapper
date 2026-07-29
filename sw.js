@@ -17,7 +17,7 @@
    tot de app erom vraagt (SKIP_WAITING), zodat er een eerlijke knop kan bestaan.
    ============================================================================ */
 
-const VERSION = 'stapper-v11';
+const VERSION = 'stapper-v12';
 /* Met de hand bijgehouden, want er is geen buildstap die dit kan stempelen. Bij
  * het verhogen van VERSION ook deze regel aanpassen — het staat in de app. */
 const UITGEBRACHT = '27 juli 2026';

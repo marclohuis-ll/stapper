@@ -30,7 +30,12 @@ import {
   spanForInsert, spanForMove, createHistory, EditError,
 } from './edit.js';
 
+import { MAP_COLOURS } from './map-style.js';
+
 const SRC = 'stapper-edit';
+/* Dezelfde kleur als de route op de gewone kaart: tijdens het slepen moet je naar
+ * jóuw route kijken, niet naar iets dat er anders uitziet. */
+const ROUTE = MAP_COLOURS.route;
 const RAAK_PX = 22;          // halve 44 px: de hele knoop is dan een duimdoel
 const STIL_MS = 250;         // stilhouden = "doe het maar echt"
 const TIK_PX = 8;            // hieronder is het een tik, geen sleep
@@ -477,7 +482,7 @@ const LAGEN = [
   ['edit-lijn', {
     type: 'line', filter: ['==', ['get', 'soort'], 'lijn'],
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#C9F26E', 'line-width': 6.5 },
+    paint: { 'line-color': ROUTE, 'line-width': 7.5 },
   }],
   // De elastiek is onderbroken en iets dunner: zo zie je dat dit nog niet de
   // route is maar je bedoeling.
@@ -485,7 +490,7 @@ const LAGEN = [
     type: 'line', filter: ['==', ['get', 'soort'], 'band'],
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': '#C9F26E', 'line-width': 5, 'line-opacity': .92,
+      'line-color': ROUTE, 'line-width': 5.5, 'line-opacity': .92,
       'line-dasharray': [1.5, 1.1],
     },
   }],

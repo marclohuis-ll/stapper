@@ -25,11 +25,23 @@ const C = {
   road:      '#2B4238',
   roadBig:   '#36503F',
   /* Drie soorten paadje, elk herkenbaar. Alle drie lichter dan de wegen, want
-   * hier gaat de app over — maar donkerder dan de lime routelijn, anders vecht
-   * de kaart met de route die je moet volgen. */
+   * hier gaat de app over. */
   path:      '#A8CE63',   // bos- en voetpad
   track:     '#95A45E',   // zandpad / onverharde weg
   cycle:     '#5C9A92',   // fietspad, koeler zodat je het verschil ziet
+
+  /* De route: de énige lijn op de kaart die niet groen is.
+   *
+   * Hij was lime, net als de voetpaden, en het onderscheid zat in breedte en in
+   * wel/niet onderbroken. Dat is te weinig: op een kaart vol lime streepjes moet je
+   * kijken welke lijn de jouwe is, en dat wil je niet terwijl je loopt.
+   *
+   * Roze en niet oranje of rood: die twee liggen te dicht bij de amberkleurige
+   * waarschuwingen én bij het olijf van de zandpaden. Roze schuift juist naar blauw
+   * toe, dus het blijft ook te onderscheiden als je rood en groen slecht ziet — bij
+   * een rode route op groene paadjes is dat precies wat wegvalt. */
+  route:     '#FF6FA3',
+  routeDim:  'rgba(255,111,163,.32)',
   pathCase:  '#0D1C17',
   text:      '#EAF3EA',
   textHalo:  '#0A1512',

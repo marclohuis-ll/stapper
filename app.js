@@ -202,6 +202,27 @@ const walk = {
   vloeiend: null,
 };
 
+/* ── Drie maten waar het lopen op afgeregeld is ───────────────────────────────
+   Staan hier bij elkaar omdat ze op meerdere plekken meespelen: de kaart, de pijl, de
+   kompasnaald in de kindmodus en het getal dat daaronder staat.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Tot hoe ver van de route je nog "op de route" bent. Ruim binnen wat GPS onder een
+ * bladerdek doet (10–30 m), dus dit verbergt ruis en geen omweg. Erboven tekent de
+ * kaart je ruwe positie, wijst de naald terug naar het pad, en komt de melding dat je
+ * ernaast loopt. */
+const OP_DE_LIJN_M = 25;
+
+/* Hoeveel de richting mag afwijken voordat de kaart meedraait. Zonder deze dode zone
+ * draait hij continu een paar graden heen en weer, en dát is wat onrustig aanvoelt —
+ * niet de grote bochten. */
+const DODE_ZONE_GRADEN = 8;
+
+/* Over hoeveel meter de peiling gaat als we hem uit je eigen beweging moeten halen,
+ * omdat je van de route af bent. Tussen twee GPS-metingen is te kort: bij 10 m fout
+ * over 6 m beweging zit de richting er al meer dan 50° naast. */
+const BASISLIJN_M = 20;
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ico = (name, cls = '') => `<span class="ms ${cls}" aria-hidden="true">${name}</span>`;
@@ -1242,10 +1263,25 @@ function etaLabel(route, pr) {
   return mins <= 1 ? 'bijna klaar' : `nog ± ${mins} min`;
 }
 
+/**
+ * Hoeveel je nog te gaan hebt naar het volgende punt.
+ *
+ * De grootste van twee: langs de route, en hemelsbreed. Langs de route is het eerlijke
+ * getal — een sloot ertussen betekent 445 meter lopen waar het 254 meter lijkt — maar
+ * dat getal klapt naar nul zodra het punt naast of achter je op de lijn ligt, en dan zou
+ * er "0 m" staan terwijl het punt 220 meter verderop is. De grootste van de twee is
+ * altijd waar: minder dan de rechte lijn kan het nooit zijn, en minder dan wat de route
+ * nog voor je heeft ook niet.
+ */
+function restAfstandM(pr) {
+  if (!pr || !pr.next) return null;
+  return Math.max(pr.nextAlongM ?? 0, pr.nextDistanceM ?? 0);
+}
+
 const nextMeta = (pr) => {
   if (!pr) return 'Volgende punt';
   if (!pr.next) return `Alle ${pr.reachedCount} punten gehad`;
-  const d = Math.round(pr.nextDistanceM);
+  const d = Math.round(restAfstandM(pr));
   return `Volgende punt · ${d >= 1000 ? komma(d / 1000) + ' km' : d + ' m'}`;
 };
 
@@ -1303,28 +1339,54 @@ views.kind = () => {
   </div>`;
 };
 
+/**
+ * De afstand in de kindmodus. Zelfde regel als op het ouderscherm — zie restAfstandM():
+ * langs de route als dat meer is, want dat is wat je nog moet lopen.
+ */
 function kindDistance() {
-  const pr = walk.progress;
-  if (!pr || pr.nextDistanceM == null) return `<small>klaar!</small>`;
-  const d = Math.round(pr.nextDistanceM);
-  return d >= 1000
-    ? `${komma(d / 1000)}<small> km</small>`
-    : `${d}<small> m</small>`;
+  const d = restAfstandM(walk.progress);
+  if (d == null) return `<small>klaar!</small>`;
+  const m = Math.round(d);
+  return m >= 1000
+    ? `${komma(m / 1000)}<small> km</small>`
+    : `${m}<small> m</small>`;
 }
 
 const kindGoal = (pr) => {
   if (!pr) return 'even wachten op de satellieten…';
+  // Van de route af? Dan wijst de naald terug naar het pad, en hoort dat er te staan.
+  if (pr.offRouteM > OP_DE_LIJN_M) return 'eerst terug naar het pad!';
   if (!pr.next) return 'alles gevonden!';
   return `op naar ${pr.next.naam.toLowerCase()}!`;
 };
 
-/** Naald wijst naar het volgende punt, gecorrigeerd voor de richting waarin de
- *  telefoon wijst. Zonder kompas houden we noord boven — beter dan niets. */
+/**
+ * Waar de naald in de kindmodus naar wijst.
+ *
+ * Niet meer hemelsbreed naar het volgende punt. Dat was misleidend: de pijl wees dwars
+ * door een heg, over een sloot of langs een spoor, en een kind loopt daar dan ook naar
+ * toe. Hij wijst nu **de route langs** — dat is de kant waar je écht heen moet.
+ *
+ * Drie gevallen, en de volgorde is de rangorde:
+ *   1. van de route af  → terug naar de lijn, want dat is nu het eerste dat moet;
+ *   2. op de route      → de richting van de route hier (zie tracking.js);
+ *   3. geen van beide   → dan is hemelsbreed naar het punt nog het beste dat we hebben.
+ *
+ * Alles daarna gecorrigeerd voor de kant waarop de telefoon gehouden wordt. Zonder
+ * kompas houden we noord boven — beter dan niets.
+ */
 function needleDeg() {
   const pr = walk.progress;
-  if (!pr || !pr.next || !state.position) return 0;
-  const to = bearing([state.position.lon, state.position.lat], pr.next.coord);
-  return Math.round(needleRotation(to, walk.heading));
+  if (!pr || !state.position) return 0;
+  const hier = [state.position.lon, state.position.lat];
+
+  let doel = null;
+  if (pr.offRouteM > OP_DE_LIJN_M && pr.snapped) doel = bearing(hier, pr.snapped);
+  else if (pr.koersOpRoute != null) doel = pr.koersOpRoute;
+  else if (pr.next) doel = bearing(hier, pr.next.coord);
+  if (doel == null) return 0;
+
+  return Math.round(needleRotation(doel, walk.heading));
 }
 
 const stickerOverlay = () => {
@@ -1991,10 +2053,6 @@ function stopWalk({ vastleggen = true } = {}) {
   return vast;
 }
 
-/* Tot hoe ver van de route de stip op de lijn getekend mag worden. Ruim binnen wat
- * GPS onder een bladerdek doet (10–30 m), dus dit verbergt ruis en geen omweg. */
-const OP_DE_LIJN_M = 25;
-
 /**
  * Het tekenen tussen de metingen door.
  *
@@ -2012,14 +2070,6 @@ function startVloeiend() {
 }
 
 /* ── Waar je heen loopt, en waar je geweest bent ────────────────────────────── */
-
-/* Hoeveel de richting mag afwijken voordat de kaart meedraait. Zonder deze dode zone
- * draait hij continu een paar graden heen en weer, en dát is wat onrustig aanvoelt —
- * niet de grote bochten. */
-const DODE_ZONE_GRADEN = 8;
-
-/* Over hoeveel meter de peiling gaat als we hem uit je eigen beweging moeten halen. */
-const BASISLIJN_M = 20;
 
 /**
  * Welke kant je op loopt.

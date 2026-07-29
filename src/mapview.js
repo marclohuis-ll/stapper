@@ -41,17 +41,17 @@ function ensure(maplibregl) {
       id: 'route-shadow', type: 'line', source: SRC,
       filter: ['==', ['get', 'soort'], 'route'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      // Donkere baan onder de route. Breed genoeg om de route los te maken van
-      // de gestippelde paadjes eronder, die sinds de kaartlabels ook lime zijn.
-      paint: { 'line-color': '#0A1512', 'line-width': 13, 'line-opacity': .8 },
+      // Donkere baan onder de route, zodat hij ook boven licht bos en over een
+      // paadje heen een eigen lijn blijft in plaats van met de ondergrond te versmelten.
+      paint: { 'line-color': '#0A1512', 'line-width': 15, 'line-opacity': .82 },
     });
     map.addLayer({
       id: 'route-line', type: 'line', source: SRC,
       filter: ['==', ['get', 'soort'], 'route'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      // Doorlopend en fors: het onderscheid met de gestippelde paadjes zit in
-      // breedte en in wel/niet onderbroken, niet in kleur.
-      paint: { 'line-width': 6.5, 'line-gradient': gradientFor(null) },
+      // Doorlopend, fors, en in een kleur die nergens anders op de kaart voorkomt:
+      // je moet de route zíen, niet hoeven zoeken welke lijn de jouwe is.
+      paint: { 'line-width': 7.5, 'line-gradient': gradientFor(null) },
     });
     /* Waar je écht gelopen hebt, uit de GPS. Alleen op de terugblik: tijdens de
      * wandeling zou een tweede lijn naast de route vooral ruis zijn. Muntgroen en
@@ -119,16 +119,15 @@ function ensure(maplibregl) {
 
     map.addLayer({
       id: 'mij-halo', type: 'circle', source: MIJ,
-      paint: { 'circle-radius': 19, 'circle-color': '#C9F26E', 'circle-opacity': .15 },
+      paint: { 'circle-radius': 25, 'circle-color': '#C9F26E', 'circle-opacity': .14 },
     });
-    /* Een donker schijfje onder de pijl. Nodig omdat de pijl lime is en pal op de
-     * lime routelijn staat: zonder deze ondergrond smelt hij samen met de lijn
-     * waarop hij loopt, en dan zie je een vlekje in plaats van een richting. */
+    /* Een donker schijfje onder de pijl, zodat hij overal leesbaar blijft — op een
+     * lime paadje, op de roze routelijn, en op donker bos. */
     map.addLayer({
       id: 'mij-schijf', type: 'circle', source: MIJ,
       paint: {
-        'circle-radius': 13, 'circle-color': '#0A1512', 'circle-opacity': .92,
-        'circle-stroke-color': 'rgba(201,242,110,.35)', 'circle-stroke-width': 1,
+        'circle-radius': 17, 'circle-color': '#0A1512', 'circle-opacity': .92,
+        'circle-stroke-color': 'rgba(201,242,110,.4)', 'circle-stroke-width': 1.5,
       },
     });
     /* Twee weergaven, en het verschil is inhoudelijk: een pijl beweert dat hij weet
@@ -177,7 +176,10 @@ const empty = () => ({ type: 'FeatureCollection', features: [] });
  * boven — precies zoals een peiling loopt.
  */
 function pijlAfbeelding(ratio = 2) {
-  const s = 30 * ratio;                 // 30 px is groot genoeg om richting te zíen
+  /* 42 px. Was 30, en dat is op een telefoon in de hand net te klein om in één
+   * oogopslag een richting uit te lezen — je moest ernaar kijken in plaats van hem te
+   * zien. Het donkere schijfje eronder groeit mee (radius 17). */
+  const s = 42 * ratio;
   const k = ratio;
   const c = document.createElement('canvas');
   c.width = s;
@@ -188,16 +190,16 @@ function pijlAfbeelding(ratio = 2) {
   // Een chevron met een inkeping onderin: die leest als richting, waar een
   // gelijkbenige driehoek er op een kleine maat uitziet als een vlekje.
   g.beginPath();
-  g.moveTo(0, -11 * k);
-  g.lineTo(8 * k, 9 * k);
-  g.lineTo(0, 4.5 * k);
-  g.lineTo(-8 * k, 9 * k);
+  g.moveTo(0, -15.5 * k);
+  g.lineTo(11 * k, 12.5 * k);
+  g.lineTo(0, 6.5 * k);
+  g.lineTo(-11 * k, 12.5 * k);
   g.closePath();
 
   // Eerst de donkere rand eronder, dan de vulling erover: zo blijft de pijl leesbaar
   // boven een lime paadje én boven donker bos.
   g.strokeStyle = '#0A1512';
-  g.lineWidth = 3 * k;
+  g.lineWidth = 3.4 * k;
   g.lineJoin = 'round';
   g.stroke();
   g.fillStyle = '#C9F26E';
@@ -298,24 +300,31 @@ export function paintMij(position, koers = null) {
   });
 }
 
-const WALKED = '#C9F26E';                    // achter je: helder
-const AHEAD = 'rgba(234,243,234,.38)';       // voor je: gedempt
+/* Achter je gedempt, vóór je vol.
+ *
+ * Dit was omgedraaid: het gelópen deel was helder lime en het deel dat je nog moest
+ * lopen gedempt wit. Dat is de logica van een voortgangsbalk, en op een kaart is het
+ * precies verkeerd om — het stuk dat je nog moet doen is het stuk dat je wil zien. Nu
+ * is de route vóór je vol roze en is wat je gehad hebt een flauwe echo in dezelfde
+ * kleur, zodat je nog kunt zien waar je vandaan komt. */
+const GELOPEN = MAP_COLOURS.routeDim;
+const TE_GAAN = MAP_COLOURS.route;
 
 /**
  * Verloop met een harde overgang op het punt waar je nu bent. Stops moeten
  * strikt oplopen, dus de knik zit een haartje voorbij de voortgang.
  *
- * `null` betekent: we volgen geen wandeling. Dan is de hele lijn helder — op het
+ * `null` betekent: we volgen geen wandeling. Dan is de hele lijn vol — op het
  * detailscherm kijk je naar een route, niet naar je voortgang erin.
  */
 function gradientFor(fraction) {
   const flat = (c) => ['interpolate', ['linear'], ['line-progress'], 0, c, 1, c];
-  if (fraction == null) return flat(WALKED);
+  if (fraction == null) return flat(TE_GAAN);
 
   const f = Math.max(0, Math.min(0.999, fraction));
-  if (f <= 0) return flat(AHEAD);
+  if (f <= 0) return flat(TE_GAAN);
   return ['interpolate', ['linear'], ['line-progress'],
-    0, WALKED, f, WALKED, f + 0.001, AHEAD, 1, AHEAD];
+    0, GELOPEN, f, GELOPEN, f + 0.001, TE_GAAN, 1, TE_GAAN];
 }
 
 /** Verhuist de kaart naar dit element. Resize is nodig: MapLibre kent de nieuwe
@@ -563,7 +572,7 @@ export function routeMiniSvg(route, w = 372, h = 124, pad = 16) {
   const [ex, ey] = px(coords.length - 1);
 
   return `<svg class="rcard__svg" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    <path d="${d}" fill="none" stroke="#C9F26E" stroke-width="3"
+    <path d="${d}" fill="none" stroke="${MAP_COLOURS.route}" stroke-width="3"
           stroke-linecap="round" stroke-linejoin="round" opacity=".95"></path>
     <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="5.5" fill="#EAF3EA"></circle>
     <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="6" fill="#C9F26E"></circle>

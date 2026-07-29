@@ -103,9 +103,8 @@ onderscheid is nodig omdat `cycleway` in het OpenMapTiles-schema ónder klasse
 `path` valt — het is er zelfs de grootste subklasse van — dus zonder splitsing
 teken je vooral fietspaden en noem je ze paadjes.
 
-De routelijn is 6,5 px doorlopend met een donkere baan eronder. Het verschil met
-de paadjes zit in breedte en in wel/niet onderbroken, niet in kleur: op een kaart
-vol lime streepjes zou een lime lijn anders wegvallen.
+De routelijn is 7,5 px doorlopend met een donkere baan eronder, en heeft één kleur
+die nergens anders op de kaart voorkomt — zie [De route valt op](#de-route-valt-op).
 
 De `poi`-laag is streng gefilterd. Ongefilterd bestaat hij vooral uit ruis: in een
 schijf van 3 km stonden er 174 parkeerplaatsen, 167 hekken, 146 bollards en 101
@@ -203,6 +202,7 @@ En in de console van de app:
 | [src/mapview.js](src/mapview.js) | één MapLibre-instantie die tussen schermen verhuist |
 | [src/geolocate.js](src/geolocate.js) | positie, met duidelijke fout bij http |
 | [src/vloeiend.js](src/vloeiend.js) | tussen GPS-metingen tekenen, zodat bewegen vloeit |
+| [src/map-style.js](src/map-style.js) | kaartstijl én de kleuren, waaronder die van de route |
 | [src/tracking.js](src/tracking.js) | voortgang langs de route, volgend punt, aankomstdrempel, hervatten |
 | [src/compass.js](src/compass.js) | kompas voor de kindmodus, gedempt over de eenheidscirkel |
 | [src/simulate.js](src/simulate.js) | wandeling nabootsen (`?sim`) |
@@ -302,10 +302,56 @@ Twee dingen die daarbij horen:
 - **De marker heeft zijn eigen bron.** Zat hij bij de route, dan zou elk frame een
   lijn van honderden punten opnieuw geserialiseerd worden.
 
-En je bent nu een **pijl** die wijst waar je heen loopt, niet een stip. Hij staat op een
-donker schijfje, want lime op een lime routelijn verdwijnt. Weet de app de richting niet
-— je staat stil, of er is nog te weinig beweging gemeten — dan is het weer een ronde
-stip: een pijl die een richting verzint is erger dan geen pijl.
+En je bent nu een **pijl** die wijst waar je heen loopt, niet een stip. Hij is 42 px en
+staat op een donker schijfje, zodat hij leesbaar blijft boven een lime paadje én boven de
+roze routelijn. Weet de app de richting niet — je staat stil, of er is nog te weinig
+beweging gemeten — dan is het weer een ronde stip: een pijl die een richting verzint is
+erger dan geen pijl.
+
+### De route valt op
+
+De routelijn was lime, net als de voetpaden, en het onderscheid zat in breedte en in
+wel/niet onderbroken. Dat is te weinig: op een kaart vol lime streepjes moet je kíjken
+welke lijn de jouwe is, en dat wil je niet terwijl je loopt. De route is nu **roze** — de
+enige niet-groene lijn op de kaart.
+
+Roze en niet oranje of rood: die twee liggen te dicht bij de amberkleurige waarschuwingen
+én bij het olijf van de zandpaden. Roze schuift naar blauw toe, dus het blijft ook te
+onderscheiden als je rood en groen slecht ziet — bij een rode route op groene paadjes is
+dat precies wat wegvalt.
+
+**En het verloop stond omgekeerd.** Het gelópen deel was helder en het deel dat je nog
+moest lopen gedempt. Dat is de logica van een voortgangsbalk; op een kaart is het precies
+verkeerd om, want het stuk dat je nog moet doen is het stuk dat je wil zien. Nu is vóór je
+vol roze en is achter je een flauwe echo in dezelfde kleur.
+
+De kleur gaat mee in het minikaartje op de resultaatkaartjes, de legenda op de terugblik,
+de voortgangsbalk in de HUD, en de lijn in de bewerkstand.
+
+### De kompasnaald volgt de route
+
+De naald in de kindmodus wees hemelsbreed naar het volgende punt — dwars door een heg, over
+een sloot, langs een spoor. Een kind loopt de kant op waar de pijl wijst, dus dat is niet
+onhandig maar verkeerd. Gemeten over een echte route (`node spike/naald-probe.mjs`):
+
+| naald | gemiddelde afwijking | meer dan 45° mis | grootste |
+| --- | --- | --- | --- |
+| hemelsbreed naar het punt | 43° | 38% van de tijd | 114° |
+| **langs de route** | **16°** | **9%** | — |
+
+Hij wijst nu de kant op waar de route hier heen gaat. Ben je meer dan 25 meter van de lijn,
+dan wijst hij **terug naar het pad** — gemeten op 50 meter ernaast: 1° van de richting naar
+de route, terwijl "naar het punt" daar 170° van af lag, dus vrijwel de andere kant op. De
+tekst eronder zegt dat dan ook: *eerst terug naar het pad!*
+
+De resterende 16° is meetruis van de vergelijking en geen verkeerde richting: de naald neemt
+de tangent op de plek waar de tracker je geprojecteerd heeft, en in een scherpe bocht zwaait
+een tangent over 25 meter flink.
+
+Het getal eronder is meegegaan: de grootste van *langs de route* en *hemelsbreed*. Langs de
+route is het eerlijke getal — 445 meter lopen waar het 254 lijkt — maar dat valt naar nul
+zodra het punt naast of achter je op de lijn ligt, en dan stond er "0 m" terwijl het punt
+220 meter verderop lag. De grootste van de twee is altijd waar.
 
 ### Rustig meedraaien
 

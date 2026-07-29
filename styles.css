@@ -17,6 +17,9 @@
   --lime-glow:     #E4FF9A;
   --mint:          #6FE3D0;
   --orange:        #FFB26B;
+  /* De route. De enige kleur op de kaart die niet groen is — zie de toelichting bij
+   * `route` in src/map-style.js. Staat hier ook, voor de legenda en de voortgangsbalk. */
+  --route:         #FF6FA3;
   --forest:        #1E6F52;
 
   /* Ink & text */
@@ -680,7 +683,9 @@ html, body { overscroll-behavior: none; }
   height: 6px; border-radius: 999px; background: rgba(255,255,255,.12);
   margin-top: 9px; overflow: hidden;
 }
-.progress__fill { height: 100%; border-radius: 999px; background: var(--lime); }
+/* Dezelfde kleur als de route op de kaart: deze balk gaat over die route, dus als de
+   lijn roze is hoort de balk dat ook te zijn. */
+.progress__fill { height: 100%; border-radius: 999px; background: var(--route); }
 
 .nextcard-wrap {
   position: absolute; left: 0; right: 0; bottom: 0;
@@ -1385,7 +1390,7 @@ button.locpill { cursor: pointer; border: 0; font: inherit; }
 }
 .recap__leg { display: inline-flex; align-items: center; gap: 6px; }
 .recap__streep { width: 16px; height: 3px; border-radius: 2px; flex: none; }
-.recap__streep--route { background: var(--lime); }
+.recap__streep--route { background: var(--route); }
 .recap__streep--trail { background: var(--mint); }
 .recap__kicker {
   font-family: var(--f-display); font-weight: 700; font-size: 13px;

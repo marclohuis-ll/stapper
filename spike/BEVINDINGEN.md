@@ -1054,3 +1054,70 @@ Vier keuzes, met de reden:
 Het filter is losgeknoopt van de kaart (`filterOpVenster()` neemt vier getallen) zodat het
 na te rekenen is zonder MapLibre. Het tékenen en het aantikken zijn dat niet: die vragen
 een kaart, en een kaart vraagt frames.
+
+---
+
+# 18. Een naald die de verkeerde kant op wees, en een route die niet opviel
+
+## De kompasnaald wees 38% van de tijd de verkeerde kant op
+
+`spike/naald-probe.mjs` loopt een echte BRouter-route af en vergelijkt per meting waar
+de naald heen wees met de kant waar de route daar heen gaat. Die tweede is per definitie
+waar je heen moet, want die lijn ís de route.
+
+| naald | gemiddelde afwijking | meer dan 45° mis | grootste |
+| --- | --- | --- | --- |
+| hemelsbreed naar het punt (was) | 43° | 38% van de tijd | 114° |
+| langs de route (nu) | 16° | 9% van de tijd | — |
+
+38% is geen detail: een kind loopt de kant op waar de pijl wijst, en die wees ruim een
+derde van de tijd meer dan 45 graden mis — soms zo goed als achteruit. De oorzaak is
+simpel: de route loopt om een sloot, een spoor of een tuin heen, en een rechte lijn naar
+het punt weet dat niet.
+
+De resterende 16° is meetruis van de vergelijking, geen verkeerde richting: de naald
+neemt de tangent op de plek waar de trácker je geprojecteerd heeft, en die ligt een paar
+meter naast de plek die de probe als waarheid gebruikt. In een scherpe bocht zwaait een
+tangent over 25 meter dan flink.
+
+**Van de route af wijst hij terug naar het pad**, niet naar het punt. Gemeten op 50 meter
+naast de lijn: 1° van de richting naar de route, terwijl "naar het punt" daar 170° van
+af lag — vrijwel precies de andere kant op. Dat is dan ook de rangorde: eerst terug naar
+het pad, en de tekst eronder zegt dat ook ("eerst terug naar het pad!").
+
+## En het getal eronder klapte naar nul
+
+Met de naald langs de route hoort het getal dat ook te zijn: hemelsbreed 254 meter waar
+je 445 moet lopen is een belofte die de route niet nakomt. Maar de afstand *langs* de
+route valt naar nul zodra het volgende punt naast of achter je op de lijn ligt — en dat
+gebeurde meteen: **"0 m" terwijl het punt 220 meter verderop lag.**
+
+De regel is nu de grootste van de twee. Minder dan de rechte lijn kan het nooit zijn, en
+minder dan wat de route nog voor je heeft ook niet. Ouderscherm en kindmodus gebruiken
+dezelfde functie, zodat er nooit twee getallen naast elkaar staan.
+
+## De route was lime, net als de paadjes
+
+Het onderscheid zat in breedte en in wel/niet onderbroken. Dat is te weinig: op een kaart
+vol lime streepjes moet je kíjken welke lijn de jouwe is, en dat wil je niet terwijl je
+loopt. De route is nu **roze** — de enige niet-groene lijn op de kaart.
+
+Waarom roze en niet oranje of rood: die liggen te dicht bij de amberkleurige
+waarschuwingen én bij het olijf van de zandpaden. Roze schuift naar blauw toe, dus het
+blijft ook te onderscheiden als je rood en groen slecht ziet — bij een rode route op
+groene paadjes is dat precies wat wegvalt.
+
+**En het verloop stond omgekeerd.** Het gelópen deel was helder en het deel dat je nog
+moest lopen gedempt. Dat is de logica van een voortgangsbalk, en op een kaart is het
+precies verkeerd om: het stuk dat je nog moet doen is het stuk dat je wil zien. Nu is
+vóór je vol roze en is achter je een flauwe echo in dezelfde kleur.
+
+Meegegaan: het minikaartje op de resultaatkaartjes, de legenda op de terugblik, de
+voortgangsbalk in de HUD (die gaat over díe route), en de lijn in de bewerkstand — daar
+sleep je aan je eigen route, dus die hoort er niet anders uit te zien.
+
+## De pijl was te klein
+
+Van 30 naar 42 px, met het donkere schijfje eronder van 13 naar 17 en de gloed van 19
+naar 25. Op een telefoon in de hand was 30 px net te klein om in één oogopslag een
+richting uit te lezen — je moest ernaar kíjken in plaats van hem te zien.
